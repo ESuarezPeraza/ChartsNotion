@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Plus, BarChart3, LineChart, PieChart, TrendingUp, ExternalLink, Trash2, Copy, Check, Settings } from 'lucide-react'
+import { Plus, BarChart3, LineChart, PieChart, TrendingUp, ExternalLink, Trash2, Copy, Check, Settings, Pencil } from 'lucide-react'
 import Link from 'next/link'
 import { getSavedCharts, deleteChart, type SavedChart } from '@/lib/storage'
 
@@ -108,9 +108,9 @@ export default function HomePage() {
                                     <div className="flex items-start justify-between">
                                         <div className="flex items-center gap-3">
                                             <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${chart.config.chartType === 'bar' ? 'bg-blue-100 text-blue-600' :
-                                                    chart.config.chartType === 'line' ? 'bg-green-100 text-green-600' :
-                                                        chart.config.chartType === 'pie' ? 'bg-purple-100 text-purple-600' :
-                                                            'bg-orange-100 text-orange-600'
+                                                chart.config.chartType === 'line' ? 'bg-green-100 text-green-600' :
+                                                    chart.config.chartType === 'pie' ? 'bg-purple-100 text-purple-600' :
+                                                        'bg-orange-100 text-orange-600'
                                                 }`}>
                                                 {chartTypeIcons[chart.config.chartType]}
                                             </div>
@@ -170,6 +170,13 @@ export default function HomePage() {
                                     >
                                         <ExternalLink className="w-4 h-4" />
                                     </a>
+                                    <Link
+                                        href={`/create?edit=${chart.id}`}
+                                        className="btn-secondary p-2 text-blue-600 hover:bg-blue-50 hover:border-blue-200"
+                                        title="Editar"
+                                    >
+                                        <Pencil className="w-4 h-4" />
+                                    </Link>
                                     <button
                                         onClick={() => handleDelete(chart.id)}
                                         className="btn-secondary p-2 text-red-600 hover:bg-red-50 hover:border-red-200"

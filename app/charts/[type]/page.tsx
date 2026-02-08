@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useNotionData } from '@/hooks/useNotionData'
 import BaseChart from '@/components/charts/BaseChart'
@@ -7,6 +8,7 @@ import ChartContainer from '@/components/ChartContainer'
 import LoadingHUD from '@/components/ui/LoadingHUD'
 import ErrorDisplay from '@/components/ui/ErrorDisplay'
 import { EChartsOption } from 'echarts'
+import { RefreshCw, Moon, Sun } from 'lucide-react'
 
 interface ChartPageProps {
     params: { type: string }
@@ -56,6 +58,19 @@ export default function ChartPage({ params }: ChartPageProps) {
     const excludedCategories = excludedParam ? excludedParam.split(',') : []
     const catColorsParam = searchParams.get('catColors')
     const categoryColors = catColorsParam ? JSON.parse(catColorsParam) as Record<string, string> : {}
+
+    // Background color
+    const bgColor = searchParams.get('bg') || 'transparent'
+
+    // Dark mode state
+    const [darkMode, setDarkMode] = useState(false)
+    const [isRefreshing, setIsRefreshing] = useState(false)
+
+    const handleRefresh = async () => {
+        setIsRefreshing(true)
+        await refresh()
+        setIsRefreshing(false)
+    }
 
     // Fetch data using SWR hook
     const { data: rawData, isLoading, isError, error, refresh } = useNotionData({
@@ -152,27 +167,35 @@ export default function ChartPage({ params }: ChartPageProps) {
     const getChartOptions = (): EChartsOption => {
         const titleText = customTitle
 
+        // Dark mode colors
+        const textColor = darkMode ? '#e5e7eb' : '#374151'
+        const textColorSecondary = darkMode ? '#9ca3af' : '#6b7280'
+        const borderColor = darkMode ? '#374151' : '#e5e7eb'
+        const gridColor = darkMode ? '#374151' : '#f3f4f6'
+        const tooltipBg = darkMode ? '#1f2937' : '#fff'
+        const chartBg = darkMode ? '#111827' : 'transparent'
+
         const baseOptions = {
-            backgroundColor: 'transparent',
-            textStyle: { fontFamily: 'Inter, sans-serif', color: '#374151', fontSize },
+            backgroundColor: chartBg,
+            textStyle: { fontFamily: 'Inter, sans-serif', color: textColor, fontSize },
             tooltip: {
-                backgroundColor: '#fff',
-                borderColor: '#e5e7eb',
+                backgroundColor: tooltipBg,
+                borderColor: borderColor,
                 borderWidth: 1,
-                textStyle: { color: '#374151', fontFamily: 'Inter, sans-serif', fontSize },
+                textStyle: { color: textColor, fontFamily: 'Inter, sans-serif', fontSize },
                 trigger: (type === 'pie' ? 'item' : 'axis') as 'item' | 'axis',
                 extraCssText: 'box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);',
             },
             title: titleText ? {
                 text: titleText,
-                textStyle: { color: '#111827', fontWeight: 600, fontSize: fontSize + 4 },
+                textStyle: { color: darkMode ? '#f3f4f6' : '#111827', fontWeight: 600, fontSize: fontSize + 4 },
                 left: 'center',
                 top: 10,
             } : undefined,
             legend: showLegend ? {
                 show: true,
                 bottom: 0,
-                textStyle: { color: '#6b7280', fontSize: fontSize - 1 },
+                textStyle: { color: textColorSecondary, fontSize: fontSize - 1 },
             } : { show: false },
         }
 
@@ -264,7 +287,35 @@ export default function ChartPage({ params }: ChartPageProps) {
     }
 
     return (
-        <main className="min-h-screen bg-transparent p-2">
+        <main
+            className="min-h-screen p-2 relative"
+            style={{ backgroundColor: darkMode ? '#111827' : bgColor }}
+        >
+            {/* Floating Controls */}
+            <div className="absolute top-3 right-3 flex gap-2 z-10">
+                <button
+                    onClick={handleRefresh}
+                    disabled={isRefreshing}
+                    className={`p-2 rounded-lg transition-all shadow-sm ${darkMode
+                            ? 'bg-gray-700 hover:bg-gray-600 text-gray-200'
+                            : 'bg-white hover:bg-gray-50 text-gray-600 border border-gray-200'
+                        }`}
+                    title="Actualizar datos"
+                >
+                    <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                </button>
+                <button
+                    onClick={() => setDarkMode(!darkMode)}
+                    className={`p-2 rounded-lg transition-all shadow-sm ${darkMode
+                            ? 'bg-gray-700 hover:bg-gray-600 text-yellow-400'
+                            : 'bg-white hover:bg-gray-50 text-gray-600 border border-gray-200'
+                        }`}
+                    title={darkMode ? 'Modo claro' : 'Modo oscuro'}
+                >
+                    {darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+                </button>
+            </div>
+
             <ChartContainer>
                 <BaseChart
                     option={getChartOptions()}

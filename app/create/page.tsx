@@ -1,11 +1,11 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { BarChart3, LineChart, PieChart, TrendingUp, Play, Copy, ExternalLink, Check, Database, ChevronRight, RefreshCw, ChevronDown, Settings, Palette, Grid3X3, Type, ArrowUpDown, ArrowUpAZ, GripVertical, Eye, EyeOff, ChevronsUp, ChevronsDown, MoveUp, MoveDown, ArrowLeft, Save } from 'lucide-react'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
-import { saveChart } from '@/lib/storage'
+import { saveChart, updateChart, getChartById } from '@/lib/storage'
 
 const BaseChart = dynamic(() => import('@/components/charts/BaseChart'), {
     ssr: false,
@@ -58,6 +58,7 @@ interface AdvancedOptions {
     fontSize: number
     showXAxis: boolean
     showYAxis: boolean
+    backgroundColor: string
     sortBy: 'none' | 'x' | 'y' | 'manual'
     sortOrder: 'asc' | 'desc'
     limitResults: number
@@ -80,6 +81,18 @@ const colorPalettes: Record<string, { name: string; colors: string[] }> = {
 }
 
 export default function CreatePage() {
+    return (
+        <Suspense fallback={
+            <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+            </div>
+        }>
+            <CreatePageContent />
+        </Suspense>
+    )
+}
+
+function CreatePageContent() {
     const router = useRouter()
     const [chartName, setChartName] = useState('')
     const [saved, setSaved] = useState(false)
@@ -113,6 +126,7 @@ export default function CreatePage() {
         fontSize: 12,
         showXAxis: true,
         showYAxis: true,
+        backgroundColor: 'transparent',
         sortBy: 'none',
         sortOrder: 'desc',
         limitResults: 0,
@@ -132,6 +146,30 @@ export default function CreatePage() {
 
     // Lista de todas las categorías disponibles (para la UI de ordenamiento)
     const [availableCategories, setAvailableCategories] = useState<string[]>([])
+
+    // Edit mode
+    const searchParams = useSearchParams()
+    const editId = searchParams.get('edit')
+
+    useEffect(() => {
+        if (editId) {
+            const existingChart = getChartById(editId)
+            if (existingChart) {
+                setChartName(existingChart.name)
+                setConfig({
+                    databaseId: existingChart.config.databaseId,
+                    xProperty: existingChart.config.xProperty,
+                    yProperty: existingChart.config.yProperty,
+                    chartType: existingChart.config.chartType,
+                    aggregation: existingChart.config.aggregation,
+                    title: existingChart.config.title,
+                })
+                if (existingChart.advanced) {
+                    setAdvanced(prev => ({ ...prev, ...existingChart.advanced }))
+                }
+            }
+        }
+    }, [editId])
 
     const chartTypes: { type: ChartType; icon: React.ReactNode; label: string }[] = [
         { type: 'bar', icon: <BarChart3 className="w-5 h-5" />, label: 'Barras' },
@@ -284,6 +322,7 @@ export default function CreatePage() {
                 fontSize: String(advanced.fontSize),
                 showXAxis: String(advanced.showXAxis),
                 showYAxis: String(advanced.showYAxis),
+                bg: advanced.backgroundColor,
                 manualOrder: advanced.manualOrder.join(','),
                 excluded: advanced.excludedCategories.join(','),
                 catColors: JSON.stringify(advanced.categoryColors)
@@ -307,7 +346,7 @@ export default function CreatePage() {
     const handleSave = () => {
         if (!embedUrl) return
 
-        saveChart({
+        const chartData = {
             name: chartName || config.title || 'Sin nombre',
             embedUrl,
             config: {
@@ -319,7 +358,14 @@ export default function CreatePage() {
                 title: config.title,
             },
             advanced,
-        })
+        }
+
+        if (editId) {
+            updateChart(editId, chartData)
+        } else {
+            saveChart(chartData)
+        }
+
         setSaved(true)
         setTimeout(() => {
             router.push('/')
@@ -857,6 +903,35 @@ export default function CreatePage() {
                                     <div className="space-y-4">
                                         <SliderOption label="Altura del Gráfico" value={advanced.chartHeight} min={200} max={600} step={50} unit="px" onChange={(v) => setAdvanced({ ...advanced, chartHeight: v })} />
                                         <SliderOption label="Tamaño de Fuente" value={advanced.fontSize} min={10} max={18} onChange={(v) => setAdvanced({ ...advanced, fontSize: v })} />
+                                    </div>
+
+                                    {/* Background Color */}
+                                    <div>
+                                        <label className="label flex items-center gap-2 mb-2">
+                                            Color de Fondo
+                                        </label>
+                                        <div className="flex gap-2 items-center">
+                                            <button
+                                                onClick={() => setAdvanced({ ...advanced, backgroundColor: 'transparent' })}
+                                                className={`px-3 py-2 rounded-lg border-2 text-sm transition-all ${advanced.backgroundColor === 'transparent'
+                                                    ? 'border-primary-600 bg-primary-50 text-primary-700'
+                                                    : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                                                    }`}
+                                            >
+                                                Transparente
+                                            </button>
+                                            <div className="flex items-center gap-2">
+                                                <input
+                                                    type="color"
+                                                    value={advanced.backgroundColor === 'transparent' ? '#ffffff' : advanced.backgroundColor}
+                                                    onChange={(e) => setAdvanced({ ...advanced, backgroundColor: e.target.value })}
+                                                    className="w-10 h-10 rounded cursor-pointer border border-gray-300 p-0"
+                                                />
+                                                <span className="text-sm text-gray-500">
+                                                    {advanced.backgroundColor === 'transparent' ? 'Transparente' : advanced.backgroundColor}
+                                                </span>
+                                            </div>
+                                        </div>
                                     </div>
 
                                     {/* Chart-specific options */}
