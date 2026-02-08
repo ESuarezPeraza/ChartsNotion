@@ -1,0 +1,747 @@
+'use client'
+
+import { useState } from 'react'
+import { BarChart3, LineChart, PieChart, TrendingUp, Play, Copy, ExternalLink, Check, Database, ChevronRight, RefreshCw, ChevronDown, Settings, Palette, Grid3X3, Type } from 'lucide-react'
+import dynamic from 'next/dynamic'
+
+const BaseChart = dynamic(() => import('@/components/charts/BaseChart'), {
+    ssr: false,
+    loading: () => (
+        <div className="h-[350px] flex items-center justify-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+        </div>
+    )
+})
+
+type ChartType = 'bar' | 'line' | 'pie' | 'area'
+
+interface Property {
+    name: string
+    type: string
+    isNumeric: boolean
+    isCategory: boolean
+    isDate: boolean
+    isText: boolean
+}
+
+interface ChartConfig {
+    databaseId: string
+    xProperty: string
+    yProperty: string
+    chartType: ChartType
+    aggregation: 'sum' | 'count' | 'average'
+    title: string
+}
+
+interface AdvancedOptions {
+    colorPalette: string
+    showLegend: boolean
+    showGrid: boolean
+    showLabels: boolean
+    smooth: boolean
+    chartHeight: number
+    barRadius: number
+    lineWidth: number
+    fontSize: number
+    sortData: 'none' | 'asc' | 'desc'
+    limitResults: number
+}
+
+// Paletas de colores profesionales
+const colorPalettes: Record<string, { name: string; colors: string[] }> = {
+    indigo: { name: 'Indigo', colors: ['#6366f1', '#8b5cf6', '#a855f7', '#d946ef', '#ec4899', '#f43f5e'] },
+    ocean: { name: 'Océano', colors: ['#0ea5e9', '#06b6d4', '#14b8a6', '#10b981', '#22c55e', '#84cc16'] },
+    sunset: { name: 'Atardecer', colors: ['#f97316', '#fb923c', '#fbbf24', '#facc15', '#a3e635', '#4ade80'] },
+    berry: { name: 'Berries', colors: ['#e11d48', '#db2777', '#c026d3', '#9333ea', '#7c3aed', '#6366f1'] },
+    earth: { name: 'Tierra', colors: ['#78716c', '#a8a29e', '#d6d3d1', '#fbbf24', '#f59e0b', '#d97706'] },
+    mono: { name: 'Monocromático', colors: ['#1f2937', '#374151', '#4b5563', '#6b7280', '#9ca3af', '#d1d5db'] },
+    rainbow: { name: 'Arcoíris', colors: ['#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#8b5cf6'] },
+    pastel: { name: 'Pastel', colors: ['#fda4af', '#fdba74', '#fde047', '#86efac', '#7dd3fc', '#c4b5fd'] },
+}
+
+export default function HomePage() {
+    const [config, setConfig] = useState<ChartConfig>({
+        databaseId: '',
+        xProperty: '',
+        yProperty: '',
+        chartType: 'bar',
+        aggregation: 'count',
+        title: ''
+    })
+    const [advanced, setAdvanced] = useState<AdvancedOptions>({
+        colorPalette: 'indigo',
+        showLegend: false,
+        showGrid: true,
+        showLabels: true,
+        smooth: true,
+        chartHeight: 350,
+        barRadius: 6,
+        lineWidth: 3,
+        fontSize: 12,
+        sortData: 'none',
+        limitResults: 0,
+    })
+    const [showAdvanced, setShowAdvanced] = useState(false)
+    const [properties, setProperties] = useState<Property[]>([])
+    const [isLoadingSchema, setIsLoadingSchema] = useState(false)
+    const [schemaError, setSchemaError] = useState<string | null>(null)
+    const [previewData, setPreviewData] = useState<{ name: string; value: number }[] | null>(null)
+    const [isLoading, setIsLoading] = useState(false)
+    const [error, setError] = useState<string | null>(null)
+    const [embedUrl, setEmbedUrl] = useState<string>('')
+    const [copied, setCopied] = useState(false)
+
+    const chartTypes: { type: ChartType; icon: React.ReactNode; label: string }[] = [
+        { type: 'bar', icon: <BarChart3 className="w-5 h-5" />, label: 'Barras' },
+        { type: 'line', icon: <LineChart className="w-5 h-5" />, label: 'Líneas' },
+        { type: 'pie', icon: <PieChart className="w-5 h-5" />, label: 'Pastel' },
+        { type: 'area', icon: <TrendingUp className="w-5 h-5" />, label: 'Área' },
+    ]
+
+    const loadSchema = async () => {
+        if (!config.databaseId) {
+            setSchemaError('Ingresa el ID de la base de datos')
+            return
+        }
+
+        setIsLoadingSchema(true)
+        setSchemaError(null)
+        setProperties([])
+        setConfig(prev => ({ ...prev, xProperty: '', yProperty: '' }))
+
+        try {
+            const res = await fetch(`/api/notion/schema/${config.databaseId}`)
+            const data = await res.json()
+
+            if (!res.ok) {
+                throw new Error(data.error || 'Error al cargar propiedades')
+            }
+
+            setProperties(data.properties)
+        } catch (err) {
+            setSchemaError(err instanceof Error ? err.message : 'Error desconocido')
+        } finally {
+            setIsLoadingSchema(false)
+        }
+    }
+
+    const handlePreview = async () => {
+        if (!config.databaseId || !config.xProperty) {
+            setError('El ID de la base de datos y la propiedad X son requeridos')
+            return
+        }
+
+        setIsLoading(true)
+        setError(null)
+
+        try {
+            const params = new URLSearchParams({
+                x: config.xProperty,
+                ...(config.yProperty && { y: config.yProperty }),
+                agg: config.aggregation,
+            })
+
+            const res = await fetch(`/api/notion/${config.databaseId}?${params}`)
+            const data = await res.json()
+
+            if (!res.ok) {
+                throw new Error(data.error || 'Error al obtener datos')
+            }
+
+            let processedData = data.data
+
+            // Sort data if needed
+            if (advanced.sortData === 'asc') {
+                processedData = [...processedData].sort((a: any, b: any) => a.value - b.value)
+            } else if (advanced.sortData === 'desc') {
+                processedData = [...processedData].sort((a: any, b: any) => b.value - a.value)
+            }
+
+            // Limit results if needed
+            if (advanced.limitResults > 0) {
+                processedData = processedData.slice(0, advanced.limitResults)
+            }
+
+            setPreviewData(processedData)
+
+            const baseUrl = window.location.origin
+            const chartParams = new URLSearchParams({
+                db: config.databaseId,
+                x: config.xProperty,
+                ...(config.yProperty && { y: config.yProperty }),
+                agg: config.aggregation,
+                ...(config.title && { title: config.title }),
+            })
+            setEmbedUrl(`${baseUrl}/charts/${config.chartType}?${chartParams}`)
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Error desconocido')
+            setPreviewData(null)
+        } finally {
+            setIsLoading(false)
+        }
+    }
+
+    const copyToClipboard = async () => {
+        await navigator.clipboard.writeText(embedUrl)
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+    }
+
+    const getChartOptions = () => {
+        if (!previewData) return {}
+
+        const colors = colorPalettes[advanced.colorPalette].colors
+
+        const baseOptions = {
+            backgroundColor: 'transparent',
+            textStyle: { fontFamily: 'Inter, sans-serif', color: '#374151', fontSize: advanced.fontSize },
+            tooltip: {
+                backgroundColor: '#fff',
+                borderColor: '#e5e7eb',
+                borderWidth: 1,
+                textStyle: { color: '#374151', fontFamily: 'Inter, sans-serif', fontSize: advanced.fontSize },
+                extraCssText: 'box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);',
+            },
+            title: config.title ? {
+                text: config.title,
+                textStyle: { color: '#111827', fontWeight: 600, fontSize: advanced.fontSize + 4 },
+            } : undefined,
+            legend: advanced.showLegend ? {
+                show: true,
+                bottom: 0,
+                textStyle: { color: '#6b7280', fontSize: advanced.fontSize - 1 },
+            } : { show: false },
+        }
+
+        if (config.chartType === 'pie') {
+            return {
+                ...baseOptions,
+                series: [{
+                    type: 'pie',
+                    radius: ['45%', '75%'],
+                    center: ['50%', advanced.showLegend ? '45%' : '55%'],
+                    data: previewData.map((d, i) => ({
+                        ...d,
+                        itemStyle: { color: colors[i % colors.length] },
+                    })),
+                    label: advanced.showLabels ? {
+                        color: '#374151',
+                        fontSize: advanced.fontSize,
+                        formatter: '{b}: {c} ({d}%)'
+                    } : { show: false },
+                    emphasis: { itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0,0,0,0.2)' } },
+                    itemStyle: { borderRadius: advanced.barRadius, borderColor: '#fff', borderWidth: 2 },
+                }],
+            }
+        }
+
+        return {
+            ...baseOptions,
+            grid: {
+                left: '3%',
+                right: '4%',
+                bottom: advanced.showLegend ? '15%' : '8%',
+                top: config.title ? '18%' : '10%',
+                containLabel: true
+            },
+            xAxis: {
+                type: 'category',
+                data: previewData.map(d => d.name),
+                axisLine: { lineStyle: { color: '#e5e7eb' } },
+                axisLabel: { color: '#6b7280', fontSize: advanced.fontSize - 1 },
+                axisTick: { show: false },
+            },
+            yAxis: {
+                type: 'value',
+                axisLine: { show: false },
+                splitLine: advanced.showGrid ? {
+                    lineStyle: { color: '#f3f4f6', type: 'dashed' }
+                } : { show: false },
+                axisLabel: { color: '#6b7280', fontSize: advanced.fontSize - 1 },
+            },
+            series: [{
+                name: config.xProperty,
+                type: config.chartType === 'area' ? 'line' : config.chartType,
+                data: previewData.map((d, i) => ({
+                    value: d.value,
+                    itemStyle: { color: colors[i % colors.length] }
+                })),
+                ...(config.chartType === 'bar' && {
+                    itemStyle: {
+                        borderRadius: [advanced.barRadius, advanced.barRadius, 0, 0],
+                    },
+                    barMaxWidth: 60,
+                    label: advanced.showLabels ? {
+                        show: true,
+                        position: 'top',
+                        color: '#6b7280',
+                        fontSize: advanced.fontSize - 2,
+                    } : { show: false },
+                }),
+                ...(config.chartType === 'line' || config.chartType === 'area' ? {
+                    smooth: advanced.smooth,
+                    lineStyle: { width: advanced.lineWidth, color: colors[0] },
+                    symbolSize: 8,
+                    itemStyle: { color: colors[0] },
+                    areaStyle: config.chartType === 'area' ? {
+                        color: {
+                            type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+                            colorStops: [
+                                { offset: 0, color: colors[0] + '40' },
+                                { offset: 1, color: colors[0] + '05' }
+                            ]
+                        },
+                    } : undefined,
+                } : {}),
+            }],
+        }
+    }
+
+    const getPropertyTypeLabel = (type: string) => {
+        const labels: Record<string, string> = {
+            title: 'Título', rich_text: 'Texto', number: 'Número', select: 'Selección',
+            multi_select: 'Multi-selección', date: 'Fecha', checkbox: 'Checkbox',
+            status: 'Estado', formula: 'Fórmula', rollup: 'Rollup',
+        }
+        return labels[type] || type
+    }
+
+    return (
+        <div className="min-h-screen bg-gray-50">
+            {/* Header */}
+            <header className="bg-white border-b border-gray-200">
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 bg-primary-600 rounded-xl flex items-center justify-center">
+                                <BarChart3 className="w-6 h-6 text-white" />
+                            </div>
+                            <div>
+                                <h1 className="text-xl font-bold text-gray-900">Notion Charts</h1>
+                                <p className="text-sm text-gray-500">Crea gráficos profesionales desde tus bases de datos</p>
+                            </div>
+                        </div>
+                        <span className="badge badge-success">
+                            <span className="w-1.5 h-1.5 bg-green-500 rounded-full mr-1.5"></span>
+                            Conectado
+                        </span>
+                    </div>
+                </div>
+            </header>
+
+            <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+                <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
+                    {/* Sidebar - Configuración */}
+                    <div className="lg:col-span-2 space-y-6">
+                        {/* Panel Principal */}
+                        <div className="card p-6">
+                            <h2 className="text-lg font-semibold text-gray-900 mb-6 flex items-center gap-2">
+                                <Database className="w-5 h-5 text-primary-600" />
+                                Datos
+                            </h2>
+
+                            <div className="space-y-5">
+                                {/* Database ID */}
+                                <div>
+                                    <label className="label">Base de Datos</label>
+                                    <div className="flex gap-2">
+                                        <input
+                                            type="text"
+                                            value={config.databaseId}
+                                            onChange={(e) => setConfig({ ...config, databaseId: e.target.value })}
+                                            placeholder="ID de tu base de Notion"
+                                            className="input font-mono text-sm flex-1"
+                                        />
+                                        <button
+                                            onClick={loadSchema}
+                                            disabled={isLoadingSchema || !config.databaseId}
+                                            className="btn-secondary flex items-center gap-2"
+                                        >
+                                            <RefreshCw className={`w-4 h-4 ${isLoadingSchema ? 'animate-spin' : ''}`} />
+                                            Cargar
+                                        </button>
+                                    </div>
+                                    {schemaError && <p className="mt-2 text-sm text-red-600">{schemaError}</p>}
+                                </div>
+
+                                {properties.length > 0 && (
+                                    <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700 flex items-center gap-2">
+                                        <Check className="w-4 h-4" />
+                                        {properties.length} propiedades cargadas
+                                    </div>
+                                )}
+
+                                {/* X Property */}
+                                <div>
+                                    <label className="label">Eje X (Categorías)</label>
+                                    <div className="relative">
+                                        <select
+                                            value={config.xProperty}
+                                            onChange={(e) => setConfig({ ...config, xProperty: e.target.value })}
+                                            disabled={properties.length === 0}
+                                            className="input appearance-none pr-10"
+                                        >
+                                            <option value="">{properties.length === 0 ? 'Carga las propiedades primero' : 'Selecciona...'}</option>
+                                            {properties.map((prop) => (
+                                                <option key={prop.name} value={prop.name}>
+                                                    {prop.name} ({getPropertyTypeLabel(prop.type)})
+                                                </option>
+                                            ))}
+                                        </select>
+                                        <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
+                                    </div>
+                                </div>
+
+                                {/* Y Property */}
+                                <div>
+                                    <label className="label">Eje Y (Valores) <span className="text-gray-400 font-normal">- Opcional</span></label>
+                                    <div className="relative">
+                                        <select
+                                            value={config.yProperty}
+                                            onChange={(e) => setConfig({ ...config, yProperty: e.target.value })}
+                                            disabled={properties.length === 0}
+                                            className="input appearance-none pr-10"
+                                        >
+                                            <option value="">Usar conteo</option>
+                                            {properties.filter(p => p.isNumeric).map((prop) => (
+                                                <option key={prop.name} value={prop.name}>
+                                                    {prop.name} ({getPropertyTypeLabel(prop.type)})
+                                                </option>
+                                            ))}
+                                        </select>
+                                        <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
+                                    </div>
+                                </div>
+
+                                {/* Title */}
+                                <div>
+                                    <label className="label">Título <span className="text-gray-400 font-normal">- Opcional</span></label>
+                                    <input
+                                        type="text"
+                                        value={config.title}
+                                        onChange={(e) => setConfig({ ...config, title: e.target.value })}
+                                        placeholder="Mi Gráfico"
+                                        className="input"
+                                    />
+                                </div>
+
+                                {/* Chart Type */}
+                                <div>
+                                    <label className="label">Tipo de Gráfico</label>
+                                    <div className="grid grid-cols-4 gap-2">
+                                        {chartTypes.map(({ type, icon, label }) => (
+                                            <button
+                                                key={type}
+                                                onClick={() => setConfig({ ...config, chartType: type })}
+                                                className={`p-3 rounded-lg border-2 flex flex-col items-center gap-1.5 transition-all ${config.chartType === type
+                                                    ? 'border-primary-600 bg-primary-50 text-primary-700'
+                                                    : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                                                    }`}
+                                            >
+                                                {icon}
+                                                <span className="text-xs font-medium">{label}</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Aggregation */}
+                                <div>
+                                    <label className="label">Agregación</label>
+                                    <div className="grid grid-cols-3 gap-2">
+                                        {([
+                                            { value: 'count', label: 'Contar' },
+                                            { value: 'sum', label: 'Sumar' },
+                                            { value: 'average', label: 'Promedio' },
+                                        ] as const).map(({ value, label }) => (
+                                            <button
+                                                key={value}
+                                                onClick={() => setConfig({ ...config, aggregation: value })}
+                                                className={`p-2.5 rounded-lg border-2 text-sm font-medium transition-all ${config.aggregation === value
+                                                    ? 'border-primary-600 bg-primary-50 text-primary-700'
+                                                    : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                                                    }`}
+                                            >
+                                                {label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Panel Avanzado */}
+                        <div className="card">
+                            <button
+                                onClick={() => setShowAdvanced(!showAdvanced)}
+                                className="w-full p-4 flex items-center justify-between text-left"
+                            >
+                                <div className="flex items-center gap-2">
+                                    <Settings className="w-5 h-5 text-gray-500" />
+                                    <span className="font-semibold text-gray-900">Opciones Avanzadas</span>
+                                </div>
+                                <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform ${showAdvanced ? 'rotate-180' : ''}`} />
+                            </button>
+
+                            {showAdvanced && (
+                                <div className="px-6 pb-6 space-y-5 border-t border-gray-100 pt-4">
+                                    {/* Color Palette */}
+                                    <div>
+                                        <label className="label flex items-center gap-2">
+                                            <Palette className="w-4 h-4" />
+                                            Paleta de Colores
+                                        </label>
+                                        <div className="grid grid-cols-4 gap-2">
+                                            {Object.entries(colorPalettes).map(([key, { name, colors }]) => (
+                                                <button
+                                                    key={key}
+                                                    onClick={() => setAdvanced({ ...advanced, colorPalette: key })}
+                                                    className={`p-2 rounded-lg border-2 transition-all ${advanced.colorPalette === key
+                                                        ? 'border-primary-600 bg-primary-50'
+                                                        : 'border-gray-200 hover:border-gray-300'
+                                                        }`}
+                                                    title={name}
+                                                >
+                                                    <div className="flex gap-0.5 justify-center mb-1">
+                                                        {colors.slice(0, 4).map((color, i) => (
+                                                            <div key={i} className="w-3 h-3 rounded-full" style={{ backgroundColor: color }} />
+                                                        ))}
+                                                    </div>
+                                                    <span className="text-xs text-gray-600">{name}</span>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* Toggles */}
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <ToggleOption
+                                            label="Mostrar Leyenda"
+                                            checked={advanced.showLegend}
+                                            onChange={(v) => setAdvanced({ ...advanced, showLegend: v })}
+                                        />
+                                        <ToggleOption
+                                            label="Mostrar Grid"
+                                            checked={advanced.showGrid}
+                                            onChange={(v) => setAdvanced({ ...advanced, showGrid: v })}
+                                        />
+                                        <ToggleOption
+                                            label="Mostrar Etiquetas"
+                                            checked={advanced.showLabels}
+                                            onChange={(v) => setAdvanced({ ...advanced, showLabels: v })}
+                                        />
+                                        <ToggleOption
+                                            label="Líneas Suaves"
+                                            checked={advanced.smooth}
+                                            onChange={(v) => setAdvanced({ ...advanced, smooth: v })}
+                                        />
+                                    </div>
+
+                                    {/* Sliders */}
+                                    <div className="space-y-4">
+                                        <SliderOption
+                                            label="Altura del Gráfico"
+                                            value={advanced.chartHeight}
+                                            min={200}
+                                            max={600}
+                                            step={50}
+                                            unit="px"
+                                            onChange={(v) => setAdvanced({ ...advanced, chartHeight: v })}
+                                        />
+                                        <SliderOption
+                                            label="Radio de Barras"
+                                            value={advanced.barRadius}
+                                            min={0}
+                                            max={20}
+                                            onChange={(v) => setAdvanced({ ...advanced, barRadius: v })}
+                                        />
+                                        <SliderOption
+                                            label="Grosor de Línea"
+                                            value={advanced.lineWidth}
+                                            min={1}
+                                            max={8}
+                                            unit="px"
+                                            onChange={(v) => setAdvanced({ ...advanced, lineWidth: v })}
+                                        />
+                                        <SliderOption
+                                            label="Tamaño de Fuente"
+                                            value={advanced.fontSize}
+                                            min={10}
+                                            max={18}
+                                            unit="px"
+                                            onChange={(v) => setAdvanced({ ...advanced, fontSize: v })}
+                                        />
+                                    </div>
+
+                                    {/* Sort & Limit */}
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="label">Ordenar Datos</label>
+                                            <select
+                                                value={advanced.sortData}
+                                                onChange={(e) => setAdvanced({ ...advanced, sortData: e.target.value as any })}
+                                                className="input text-sm"
+                                            >
+                                                <option value="none">Sin ordenar</option>
+                                                <option value="asc">Ascendente</option>
+                                                <option value="desc">Descendente</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="label">Limitar Resultados</label>
+                                            <input
+                                                type="number"
+                                                value={advanced.limitResults || ''}
+                                                onChange={(e) => setAdvanced({ ...advanced, limitResults: parseInt(e.target.value) || 0 })}
+                                                placeholder="Sin límite"
+                                                min={0}
+                                                className="input text-sm"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Generate Button */}
+                        <button
+                            onClick={handlePreview}
+                            disabled={isLoading || !config.databaseId || !config.xProperty}
+                            className="btn-primary w-full flex items-center justify-center gap-2 py-4"
+                        >
+                            {isLoading ? (
+                                <>
+                                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                                    Generando...
+                                </>
+                            ) : (
+                                <>
+                                    <Play className="w-5 h-5" />
+                                    Generar Gráfico
+                                </>
+                            )}
+                        </button>
+
+                        {error && (
+                            <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+                                {error}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Preview */}
+                    <div className="lg:col-span-3 space-y-6">
+                        <div className="card p-6">
+                            <h2 className="text-lg font-semibold text-gray-900 mb-6">Vista Previa</h2>
+
+                            {previewData ? (
+                                <div className="space-y-6">
+                                    <div className="bg-gray-50 rounded-xl p-4">
+                                        <BaseChart option={getChartOptions()} height={advanced.chartHeight} />
+                                    </div>
+
+                                    {embedUrl && (
+                                        <div className="p-4 bg-primary-50 border border-primary-200 rounded-xl">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <label className="text-sm font-medium text-primary-900">URL para Embed</label>
+                                                <div className="flex gap-2">
+                                                    <button onClick={copyToClipboard} className="btn-secondary flex items-center gap-1.5 text-sm py-1.5 px-3">
+                                                        {copied ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
+                                                        {copied ? 'Copiado!' : 'Copiar'}
+                                                    </button>
+                                                    <a href={embedUrl} target="_blank" rel="noopener noreferrer" className="btn-secondary flex items-center gap-1.5 text-sm py-1.5 px-3">
+                                                        <ExternalLink className="w-4 h-4" />
+                                                        Abrir
+                                                    </a>
+                                                </div>
+                                            </div>
+                                            <div className="bg-white rounded-lg p-3 font-mono text-xs text-gray-600 break-all border border-primary-200">
+                                                {embedUrl}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <div>
+                                        <h3 className="text-sm font-medium text-gray-700 mb-3">Datos ({previewData.length} registros)</h3>
+                                        <div className="border border-gray-200 rounded-lg overflow-hidden">
+                                            <table className="w-full text-sm">
+                                                <thead className="bg-gray-50">
+                                                    <tr>
+                                                        <th className="px-4 py-3 text-left font-medium text-gray-600">Categoría</th>
+                                                        <th className="px-4 py-3 text-right font-medium text-gray-600">Valor</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-gray-100">
+                                                    {previewData.slice(0, 10).map((item, i) => (
+                                                        <tr key={i} className="hover:bg-gray-50">
+                                                            <td className="px-4 py-3 text-gray-900">{item.name}</td>
+                                                            <td className="px-4 py-3 text-right font-medium text-primary-600">{item.value}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                            {previewData.length > 10 && (
+                                                <div className="px-4 py-2 bg-gray-50 text-center text-xs text-gray-500">
+                                                    +{previewData.length - 10} más
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="h-[400px] flex items-center justify-center border-2 border-dashed border-gray-200 rounded-xl">
+                                    <div className="text-center">
+                                        <BarChart3 className="w-16 h-16 mx-auto text-gray-300 mb-4" />
+                                        <p className="text-gray-500 font-medium">Tu gráfico aparecerá aquí</p>
+                                        <p className="text-gray-400 text-sm mt-1">
+                                            {properties.length === 0 ? 'Carga las propiedades de tu base de datos' : 'Selecciona las propiedades y genera el gráfico'}
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    )
+}
+
+// Toggle Component
+function ToggleOption({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
+    return (
+        <label className="flex items-center justify-between p-3 rounded-lg border border-gray-200 cursor-pointer hover:bg-gray-50">
+            <span className="text-sm text-gray-700">{label}</span>
+            <button
+                type="button"
+                onClick={() => onChange(!checked)}
+                className={`relative w-10 h-6 rounded-full transition-colors ${checked ? 'bg-primary-600' : 'bg-gray-300'}`}
+            >
+                <span className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${checked ? 'left-5' : 'left-1'}`} />
+            </button>
+        </label>
+    )
+}
+
+// Slider Component
+function SliderOption({ label, value, min, max, step = 1, unit = '', onChange }: {
+    label: string; value: number; min: number; max: number; step?: number; unit?: string; onChange: (v: number) => void
+}) {
+    return (
+        <div>
+            <div className="flex justify-between text-sm mb-2">
+                <span className="text-gray-700">{label}</span>
+                <span className="text-gray-500">{value}{unit}</span>
+            </div>
+            <input
+                type="range"
+                value={value}
+                min={min}
+                max={max}
+                step={step}
+                onChange={(e) => onChange(parseInt(e.target.value))}
+                className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-primary-600"
+            />
+        </div>
+    )
+}
