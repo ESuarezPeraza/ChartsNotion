@@ -291,17 +291,17 @@ export default function ChartPage({ params }: ChartPageProps) {
 
     return (
         <main
-            className="min-h-screen p-2 relative"
-            style={{ backgroundColor: darkMode ? '#111827' : bgColor }}
+            className="min-h-screen p-2 relative transition-colors"
+            style={{ backgroundColor: darkMode ? '#191919' : bgColor }}
         >
             {/* Floating Controls */}
             <div className="absolute top-3 right-3 flex gap-2 z-10">
                 <button
                     onClick={handleRefresh}
                     disabled={isRefreshing}
-                    className={`p-2 rounded-lg transition-all shadow-sm ${darkMode
-                        ? 'bg-gray-700 hover:bg-gray-600 text-gray-200'
-                        : 'bg-white hover:bg-gray-50 text-gray-600 border border-gray-200'
+                    className={`p-2 rounded-md transition-all ${darkMode
+                        ? 'bg-[#ffffff0d] hover:bg-[#ffffff1a] text-[#ffffffcf]'
+                        : 'bg-white hover:bg-gray-50 text-gray-600 border border-gray-200 shadow-sm'
                         }`}
                     title="Actualizar datos"
                 >
@@ -309,9 +309,9 @@ export default function ChartPage({ params }: ChartPageProps) {
                 </button>
                 <button
                     onClick={() => setDarkMode(!darkMode)}
-                    className={`p-2 rounded-lg transition-all shadow-sm ${darkMode
-                        ? 'bg-gray-700 hover:bg-gray-600 text-yellow-400'
-                        : 'bg-white hover:bg-gray-50 text-gray-600 border border-gray-200'
+                    className={`p-2 rounded-md transition-all ${darkMode
+                        ? 'bg-[#ffffff0d] hover:bg-[#ffffff1a] text-yellow-400'
+                        : 'bg-white hover:bg-gray-50 text-gray-600 border border-gray-200 shadow-sm'
                         }`}
                     title={darkMode ? 'Modo claro' : 'Modo oscuro'}
                 >
