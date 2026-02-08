@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { BarChart3, LineChart, PieChart, TrendingUp, Play, Copy, ExternalLink, Check, Database, ChevronRight, RefreshCw, ChevronDown, Settings, Palette, Grid3X3, Type } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { BarChart3, LineChart, PieChart, TrendingUp, Play, Copy, ExternalLink, Check, Database, ChevronRight, RefreshCw, ChevronDown, Settings, Palette, Grid3X3, Type, ArrowUpDown, ArrowUpAZ, GripVertical, Eye, EyeOff, ChevronsUp, ChevronsDown, MoveUp, MoveDown } from 'lucide-react'
 import dynamic from 'next/dynamic'
 
 const BaseChart = dynamic(() => import('@/components/charts/BaseChart'), {
@@ -35,16 +35,22 @@ interface ChartConfig {
 
 interface AdvancedOptions {
     colorPalette: string
+    customColors: string[]
     showLegend: boolean
     showGrid: boolean
     showLabels: boolean
-    smooth: boolean
+    smooth: number
     chartHeight: number
     barRadius: number
     lineWidth: number
     fontSize: number
-    sortData: 'none' | 'asc' | 'desc'
+    sortBy: 'none' | 'x' | 'y' | 'manual'
+    sortOrder: 'asc' | 'desc'
     limitResults: number
+    // New granular options
+    manualOrder: string[]
+    excludedCategories: string[]
+    categoryColors: Record<string, string>
 }
 
 // Paletas de colores profesionales
@@ -70,16 +76,21 @@ export default function HomePage() {
     })
     const [advanced, setAdvanced] = useState<AdvancedOptions>({
         colorPalette: 'indigo',
+        customColors: ['#6366f1', '#8b5cf6', '#a855f7', '#d946ef', '#ec4899', '#f43f5e'],
         showLegend: false,
         showGrid: true,
         showLabels: true,
-        smooth: true,
+        smooth: 0.5,
         chartHeight: 350,
         barRadius: 6,
         lineWidth: 3,
         fontSize: 12,
-        sortData: 'none',
+        sortBy: 'none',
+        sortOrder: 'desc',
         limitResults: 0,
+        manualOrder: [],
+        excludedCategories: [],
+        categoryColors: {},
     })
     const [showAdvanced, setShowAdvanced] = useState(false)
     const [properties, setProperties] = useState<Property[]>([])
@@ -90,6 +101,9 @@ export default function HomePage() {
     const [error, setError] = useState<string | null>(null)
     const [embedUrl, setEmbedUrl] = useState<string>('')
     const [copied, setCopied] = useState(false)
+
+    // Lista de todas las categorías disponibles (para la UI de ordenamiento)
+    const [availableCategories, setAvailableCategories] = useState<string[]>([])
 
     const chartTypes: { type: ChartType; icon: React.ReactNode; label: string }[] = [
         { type: 'bar', icon: <BarChart3 className="w-5 h-5" />, label: 'Barras' },
@@ -148,16 +162,68 @@ export default function HomePage() {
                 throw new Error(data.error || 'Error al obtener datos')
             }
 
-            let processedData = data.data
+            let processedData = data.data as { name: string; value: number }[]
 
-            // Sort data if needed
-            if (advanced.sortData === 'asc') {
-                processedData = [...processedData].sort((a: any, b: any) => a.value - b.value)
-            } else if (advanced.sortData === 'desc') {
-                processedData = [...processedData].sort((a: any, b: any) => b.value - a.value)
+            // Update available categories for manual sorting UI if needed
+            // Only update if list is vastly different or empty
+            const currentCategories = processedData.map(d => d.name)
+
+            // If manual sort is empty, initialize it with current order
+            if (advanced.manualOrder.length === 0) {
+                setAdvanced(prev => ({ ...prev, manualOrder: currentCategories }))
+            } else {
+                // If there are new categories not in manualOrder, append them
+                const newCats = currentCategories.filter(c => !advanced.manualOrder.includes(c))
+                if (newCats.length > 0) {
+                    setAdvanced(prev => ({ ...prev, manualOrder: [...prev.manualOrder, ...newCats] }))
+                }
+            }
+            setAvailableCategories(currentCategories)
+
+            // Filtering
+            processedData = processedData.filter(d => !advanced.excludedCategories.includes(d.name))
+
+            // Sorting logic
+            if (advanced.sortBy === 'manual') {
+                processedData.sort((a, b) => {
+                    const idxA = advanced.manualOrder.indexOf(a.name)
+                    const idxB = advanced.manualOrder.indexOf(b.name)
+                    // Retrieve index, if not found (e.g. dynamic new data), put at end
+                    const aPos = idxA === -1 ? 9999 : idxA
+                    const bPos = idxB === -1 ? 9999 : idxB
+                    return aPos - bPos
+                })
+            } else if (advanced.sortBy !== 'none') {
+                processedData.sort((a, b) => {
+                    let valA: any = advanced.sortBy === 'x' ? a.name : a.value
+                    let valB: any = advanced.sortBy === 'x' ? b.name : b.value
+
+                    // Check if values are dates (ISO format: YYYY-MM-DD or with time)
+                    const isDateA = typeof valA === 'string' && /^\d{4}-\d{2}-\d{2}/.test(valA)
+                    const isDateB = typeof valB === 'string' && /^\d{4}-\d{2}-\d{2}/.test(valB)
+
+                    if (isDateA && isDateB) {
+                        // Sort by date timestamp
+                        valA = new Date(valA).getTime()
+                        valB = new Date(valB).getTime()
+                    } else {
+                        // Try numeric sorting
+                        const numA = Number(valA)
+                        const numB = Number(valB)
+
+                        if (advanced.sortBy === 'x' && !isNaN(numA) && !isNaN(numB)) {
+                            valA = numA
+                            valB = numB
+                        }
+                    }
+
+                    if (valA < valB) return advanced.sortOrder === 'asc' ? -1 : 1
+                    if (valA > valB) return advanced.sortOrder === 'asc' ? 1 : -1
+                    return 0
+                })
             }
 
-            // Limit results if needed
+            // Limit results
             if (advanced.limitResults > 0) {
                 processedData = processedData.slice(0, advanced.limitResults)
             }
@@ -171,7 +237,23 @@ export default function HomePage() {
                 ...(config.yProperty && { y: config.yProperty }),
                 agg: config.aggregation,
                 ...(config.title && { title: config.title }),
+                colors: advanced.colorPalette === 'custom'
+                    ? advanced.customColors.join(',')
+                    : colorPalettes[advanced.colorPalette].colors.join(','),
+                legend: String(advanced.showLegend),
+                grid: String(advanced.showGrid),
+                labels: String(advanced.showLabels),
+                smooth: String(advanced.smooth),
+                radius: String(advanced.barRadius),
+                sortBy: advanced.sortBy,
+                sortOrder: advanced.sortOrder,
+                fontSize: String(advanced.fontSize),
+                // Serialize new options
+                manualOrder: advanced.manualOrder.join(','),
+                excluded: advanced.excludedCategories.join(','),
+                catColors: JSON.stringify(advanced.categoryColors)
             })
+
             setEmbedUrl(`${baseUrl}/charts/${config.chartType}?${chartParams}`)
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Error desconocido')
@@ -190,7 +272,17 @@ export default function HomePage() {
     const getChartOptions = () => {
         if (!previewData) return {}
 
-        const colors = colorPalettes[advanced.colorPalette].colors
+        const getCategoryColor = (name: string, index: number) => {
+            // 1. Check specific category color
+            if (advanced.categoryColors[name]) return advanced.categoryColors[name]
+
+            // 2. Check palette
+            const palette = advanced.colorPalette === 'custom'
+                ? advanced.customColors
+                : colorPalettes[advanced.colorPalette].colors
+
+            return palette[index % palette.length]
+        }
 
         const baseOptions = {
             backgroundColor: 'transparent',
@@ -222,7 +314,7 @@ export default function HomePage() {
                     center: ['50%', advanced.showLegend ? '45%' : '55%'],
                     data: previewData.map((d, i) => ({
                         ...d,
-                        itemStyle: { color: colors[i % colors.length] },
+                        itemStyle: { color: getCategoryColor(d.name, i) },
                     })),
                     label: advanced.showLabels ? {
                         color: '#374151',
@@ -264,7 +356,7 @@ export default function HomePage() {
                 type: config.chartType === 'area' ? 'line' : config.chartType,
                 data: previewData.map((d, i) => ({
                     value: d.value,
-                    itemStyle: { color: colors[i % colors.length] }
+                    itemStyle: { color: getCategoryColor(d.name, i) }
                 })),
                 ...(config.chartType === 'bar' && {
                     itemStyle: {
@@ -280,15 +372,15 @@ export default function HomePage() {
                 }),
                 ...(config.chartType === 'line' || config.chartType === 'area' ? {
                     smooth: advanced.smooth,
-                    lineStyle: { width: advanced.lineWidth, color: colors[0] },
+                    lineStyle: { width: advanced.lineWidth, color: getCategoryColor(config.xProperty, 0) }, // Use first color for line
                     symbolSize: 8,
-                    itemStyle: { color: colors[0] },
+                    itemStyle: { color: getCategoryColor(config.xProperty, 0) },
                     areaStyle: config.chartType === 'area' ? {
                         color: {
                             type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
                             colorStops: [
-                                { offset: 0, color: colors[0] + '40' },
-                                { offset: 1, color: colors[0] + '05' }
+                                { offset: 0, color: getCategoryColor(config.xProperty, 0) + '40' }, // Simple alpha for now
+                                { offset: 1, color: getCategoryColor(config.xProperty, 0) + '05' }
                             ]
                         },
                     } : undefined,
@@ -304,6 +396,30 @@ export default function HomePage() {
             status: 'Estado', formula: 'Fórmula', rollup: 'Rollup',
         }
         return labels[type] || type
+    }
+
+    const updateCustomColor = (index: number, color: string) => {
+        const newColors = [...advanced.customColors]
+        newColors[index] = color
+        setAdvanced({ ...advanced, customColors: newColors })
+    }
+
+    // UI Helpers
+    const manualMove = (index: number, direction: 'up' | 'down') => {
+        const newOrder = [...advanced.manualOrder]
+        if (direction === 'up' && index > 0) {
+            [newOrder[index], newOrder[index - 1]] = [newOrder[index - 1], newOrder[index]]
+        } else if (direction === 'down' && index < newOrder.length - 1) {
+            [newOrder[index], newOrder[index + 1]] = [newOrder[index + 1], newOrder[index]]
+        }
+        setAdvanced({ ...advanced, manualOrder: newOrder })
+    }
+
+    const toggleExclusion = (name: string) => {
+        const newExcluded = advanced.excludedCategories.includes(name)
+            ? advanced.excludedCategories.filter(c => c !== name)
+            : [...advanced.excludedCategories, name]
+        setAdvanced({ ...advanced, excludedCategories: newExcluded })
     }
 
     return (
@@ -333,13 +449,13 @@ export default function HomePage() {
                 <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
                     {/* Sidebar - Configuración */}
                     <div className="lg:col-span-2 space-y-6">
-                        {/* Panel Principal */}
+                        {/* Panel Principal - Data */}
                         <div className="card p-6">
                             <h2 className="text-lg font-semibold text-gray-900 mb-6 flex items-center gap-2">
                                 <Database className="w-5 h-5 text-primary-600" />
                                 Datos
                             </h2>
-
+                            {/* ... (Same inputs as before up to Chart Type) ... */}
                             <div className="space-y-5">
                                 {/* Database ID */}
                                 <div>
@@ -413,18 +529,6 @@ export default function HomePage() {
                                     </div>
                                 </div>
 
-                                {/* Title */}
-                                <div>
-                                    <label className="label">Título <span className="text-gray-400 font-normal">- Opcional</span></label>
-                                    <input
-                                        type="text"
-                                        value={config.title}
-                                        onChange={(e) => setConfig({ ...config, title: e.target.value })}
-                                        placeholder="Mi Gráfico"
-                                        className="input"
-                                    />
-                                </div>
-
                                 {/* Chart Type */}
                                 <div>
                                     <label className="label">Tipo de Gráfico</label>
@@ -444,7 +548,6 @@ export default function HomePage() {
                                         ))}
                                     </div>
                                 </div>
-
                                 {/* Aggregation */}
                                 <div>
                                     <label className="label">Agregación</label>
@@ -467,10 +570,22 @@ export default function HomePage() {
                                         ))}
                                     </div>
                                 </div>
+
+                                {/* Chart Title */}
+                                <div>
+                                    <label className="label">Título del Gráfico <span className="text-gray-400 font-normal">- Opcional</span></label>
+                                    <input
+                                        type="text"
+                                        value={config.title}
+                                        onChange={(e) => setConfig({ ...config, title: e.target.value })}
+                                        placeholder="Ej: Ventas por Mes"
+                                        className="input"
+                                    />
+                                </div>
                             </div>
                         </div>
 
-                        {/* Panel Avanzado */}
+                        {/* Panel Avanzado - Styles & Sort */}
                         <div className="card">
                             <button
                                 onClick={() => setShowAdvanced(!showAdvanced)}
@@ -485,119 +600,173 @@ export default function HomePage() {
 
                             {showAdvanced && (
                                 <div className="px-6 pb-6 space-y-5 border-t border-gray-100 pt-4">
-                                    {/* Color Palette */}
-                                    <div>
-                                        <label className="label flex items-center gap-2">
-                                            <Palette className="w-4 h-4" />
-                                            Paleta de Colores
-                                        </label>
-                                        <div className="grid grid-cols-4 gap-2">
-                                            {Object.entries(colorPalettes).map(([key, { name, colors }]) => (
+                                    {/* Sort Data */}
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="label flex items-center gap-2">
+                                                <ArrowUpDown className="w-4 h-4" />
+                                                Ordenar por
+                                            </label>
+                                            <select
+                                                value={advanced.sortBy}
+                                                onChange={(e) => setAdvanced({ ...advanced, sortBy: e.target.value as any })}
+                                                className="input text-sm"
+                                            >
+                                                <option value="none">Original</option>
+                                                <option value="x">Categoría (X)</option>
+                                                <option value="y">Valor (Y)</option>
+                                                <option value="manual">Manual</option>
+                                            </select>
+                                        </div>
+                                        {advanced.sortBy !== 'manual' && (
+                                            <div>
+                                                <label className="label flex items-center gap-2">
+                                                    <ArrowUpAZ className="w-4 h-4" />
+                                                    Dirección
+                                                </label>
+                                                <select
+                                                    value={advanced.sortOrder}
+                                                    onChange={(e) => setAdvanced({ ...advanced, sortOrder: e.target.value as any })}
+                                                    className="input text-sm"
+                                                >
+                                                    <option value="asc">Ascendente</option>
+                                                    <option value="desc">Descendente</option>
+                                                </select>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Manual Sort & Color & Filter List */}
+                                    {advanced.sortBy === 'manual' && advanced.manualOrder.length > 0 && (
+                                        <div className="border rounded-lg overflow-hidden bg-white">
+                                            <div className="bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-500 uppercase flex justify-between">
+                                                <span>Categoría</span>
+                                                <span className="flex gap-4 mr-2">
+                                                    <span>Color</span>
+                                                    <span>Acciones</span>
+                                                </span>
+                                            </div>
+                                            <div className="max-h-[300px] overflow-y-auto divide-y divide-gray-100">
+                                                {advanced.manualOrder.map((name, idx) => (
+                                                    <div key={name} className="flex items-center justify-between p-2 hover:bg-gray-50 group">
+                                                        <div className="flex items-center gap-2 overflow-hidden">
+                                                            <button
+                                                                onClick={() => toggleExclusion(name)}
+                                                                className={`p-1 rounded hover:bg-gray-200 ${advanced.excludedCategories.includes(name) ? 'text-gray-300' : 'text-primary-600'}`}
+                                                                title={advanced.excludedCategories.includes(name) ? "Mostrar" : "Ocultar"}
+                                                            >
+                                                                {advanced.excludedCategories.includes(name) ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                                            </button>
+                                                            <span className={`text-sm truncate ${advanced.excludedCategories.includes(name) ? 'text-gray-400 line-through' : 'text-gray-700'}`}>
+                                                                {name}
+                                                            </span>
+                                                        </div>
+
+                                                        <div className="flex items-center gap-2">
+                                                            <input
+                                                                type="color"
+                                                                value={advanced.categoryColors[name] || '#6366f1'}
+                                                                onChange={(e) => setAdvanced({ ...advanced, categoryColors: { ...advanced.categoryColors, [name]: e.target.value } })}
+                                                                className="w-6 h-6 rounded border-0 p-0 cursor-pointer bg-transparent"
+                                                                title="Color específico"
+                                                            />
+                                                            <div className="flex flex-col gap-0.5">
+                                                                <button
+                                                                    onClick={() => manualMove(idx, 'up')}
+                                                                    disabled={idx === 0}
+                                                                    className="p-0.5 hover:bg-gray-200 rounded disabled:opacity-30"
+                                                                >
+                                                                    <MoveUp className="w-3 h-3" />
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => manualMove(idx, 'down')}
+                                                                    disabled={idx === advanced.manualOrder.length - 1}
+                                                                    className="p-0.5 hover:bg-gray-200 rounded disabled:opacity-30"
+                                                                >
+                                                                    <MoveDown className="w-3 h-3" />
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Color Palette (Show only if not manual, or maybe allow overriding?) */}
+                                    {/* If manual mode, user typically sets colors per item, but we can keep palette for defaults */}
+                                    {advanced.sortBy !== 'manual' && (
+                                        <div>
+                                            <label className="label flex items-center gap-2">
+                                                <Palette className="w-4 h-4" />
+                                                Paleta de Colores
+                                            </label>
+                                            <div className="grid grid-cols-4 gap-2 mb-3">
+                                                {Object.entries(colorPalettes).map(([key, { name, colors }]) => (
+                                                    <button
+                                                        key={key}
+                                                        onClick={() => setAdvanced({ ...advanced, colorPalette: key })}
+                                                        className={`p-2 rounded-lg border-2 transition-all ${advanced.colorPalette === key
+                                                            ? 'border-primary-600 bg-primary-50'
+                                                            : 'border-gray-200 hover:border-gray-300'
+                                                            }`}
+                                                        title={name}
+                                                    >
+                                                        <div className="flex gap-0.5 justify-center mb-1">
+                                                            {colors.slice(0, 4).map((color, i) => (
+                                                                <div key={i} className="w-3 h-3 rounded-full" style={{ backgroundColor: color }} />
+                                                            ))}
+                                                        </div>
+                                                        <span className="text-xs text-gray-600">{name}</span>
+                                                    </button>
+                                                ))}
                                                 <button
-                                                    key={key}
-                                                    onClick={() => setAdvanced({ ...advanced, colorPalette: key })}
-                                                    className={`p-2 rounded-lg border-2 transition-all ${advanced.colorPalette === key
+                                                    onClick={() => setAdvanced({ ...advanced, colorPalette: 'custom' })}
+                                                    className={`p-2 rounded-lg border-2 transition-all flex flex-col items-center justify-center gap-1 ${advanced.colorPalette === 'custom'
                                                         ? 'border-primary-600 bg-primary-50'
                                                         : 'border-gray-200 hover:border-gray-300'
                                                         }`}
-                                                    title={name}
                                                 >
-                                                    <div className="flex gap-0.5 justify-center mb-1">
-                                                        {colors.slice(0, 4).map((color, i) => (
-                                                            <div key={i} className="w-3 h-3 rounded-full" style={{ backgroundColor: color }} />
+                                                    <div className="flex gap-0.5">
+                                                        <div className="w-3 h-3 rounded-full bg-gradient-to-br from-red-500 to-blue-500" />
+                                                        <div className="w-3 h-3 rounded-full bg-gradient-to-br from-green-500 to-purple-500" />
+                                                    </div>
+                                                    <span className="text-xs text-gray-600">Personalizado</span>
+                                                </button>
+                                            </div>
+                                            {/* Custom Colors Inputs */}
+                                            {advanced.colorPalette === 'custom' && (
+                                                <div className="bg-gray-50 p-3 rounded-lg border border-gray-200">
+                                                    <label className="text-xs font-medium text-gray-600 mb-2 block">Elige tus colores (Cíclicos)</label>
+                                                    <div className="grid grid-cols-6 gap-2">
+                                                        {advanced.customColors.map((color, i) => (
+                                                            <input
+                                                                key={i}
+                                                                type="color"
+                                                                value={color}
+                                                                onChange={(e) => updateCustomColor(i, e.target.value)}
+                                                                className="w-8 h-8 rounded cursor-pointer border-0 p-0"
+                                                                title={`Color ${i + 1}`}
+                                                            />
                                                         ))}
                                                     </div>
-                                                    <span className="text-xs text-gray-600">{name}</span>
-                                                </button>
-                                            ))}
+                                                </div>
+                                            )}
                                         </div>
-                                    </div>
+                                    )}
 
                                     {/* Toggles */}
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <ToggleOption
-                                            label="Mostrar Leyenda"
-                                            checked={advanced.showLegend}
-                                            onChange={(v) => setAdvanced({ ...advanced, showLegend: v })}
-                                        />
-                                        <ToggleOption
-                                            label="Mostrar Grid"
-                                            checked={advanced.showGrid}
-                                            onChange={(v) => setAdvanced({ ...advanced, showGrid: v })}
-                                        />
-                                        <ToggleOption
-                                            label="Mostrar Etiquetas"
-                                            checked={advanced.showLabels}
-                                            onChange={(v) => setAdvanced({ ...advanced, showLabels: v })}
-                                        />
-                                        <ToggleOption
-                                            label="Líneas Suaves"
-                                            checked={advanced.smooth}
-                                            onChange={(v) => setAdvanced({ ...advanced, smooth: v })}
-                                        />
+                                    <div className="grid grid-cols-3 gap-3">
+                                        <ToggleOption label="Leyenda" checked={advanced.showLegend} onChange={(v) => setAdvanced({ ...advanced, showLegend: v })} />
+                                        <ToggleOption label="Grid" checked={advanced.showGrid} onChange={(v) => setAdvanced({ ...advanced, showGrid: v })} />
+                                        <ToggleOption label="Etiquetas" checked={advanced.showLabels} onChange={(v) => setAdvanced({ ...advanced, showLabels: v })} />
                                     </div>
 
                                     {/* Sliders */}
                                     <div className="space-y-4">
-                                        <SliderOption
-                                            label="Altura del Gráfico"
-                                            value={advanced.chartHeight}
-                                            min={200}
-                                            max={600}
-                                            step={50}
-                                            unit="px"
-                                            onChange={(v) => setAdvanced({ ...advanced, chartHeight: v })}
-                                        />
-                                        <SliderOption
-                                            label="Radio de Barras"
-                                            value={advanced.barRadius}
-                                            min={0}
-                                            max={20}
-                                            onChange={(v) => setAdvanced({ ...advanced, barRadius: v })}
-                                        />
-                                        <SliderOption
-                                            label="Grosor de Línea"
-                                            value={advanced.lineWidth}
-                                            min={1}
-                                            max={8}
-                                            unit="px"
-                                            onChange={(v) => setAdvanced({ ...advanced, lineWidth: v })}
-                                        />
-                                        <SliderOption
-                                            label="Tamaño de Fuente"
-                                            value={advanced.fontSize}
-                                            min={10}
-                                            max={18}
-                                            unit="px"
-                                            onChange={(v) => setAdvanced({ ...advanced, fontSize: v })}
-                                        />
-                                    </div>
-
-                                    {/* Sort & Limit */}
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <div>
-                                            <label className="label">Ordenar Datos</label>
-                                            <select
-                                                value={advanced.sortData}
-                                                onChange={(e) => setAdvanced({ ...advanced, sortData: e.target.value as any })}
-                                                className="input text-sm"
-                                            >
-                                                <option value="none">Sin ordenar</option>
-                                                <option value="asc">Ascendente</option>
-                                                <option value="desc">Descendente</option>
-                                            </select>
-                                        </div>
-                                        <div>
-                                            <label className="label">Limitar Resultados</label>
-                                            <input
-                                                type="number"
-                                                value={advanced.limitResults || ''}
-                                                onChange={(e) => setAdvanced({ ...advanced, limitResults: parseInt(e.target.value) || 0 })}
-                                                placeholder="Sin límite"
-                                                min={0}
-                                                className="input text-sm"
-                                            />
-                                        </div>
+                                        <SliderOption label="Altura" value={advanced.chartHeight} min={200} max={600} step={50} unit="px" onChange={(v) => setAdvanced({ ...advanced, chartHeight: v })} />
+                                        <SliderOption label="Radio de Barras" value={advanced.barRadius} min={0} max={20} onChange={(v) => setAdvanced({ ...advanced, barRadius: v })} />
+                                        <SliderOption label="Suavidad de Curva" value={Math.round(advanced.smooth * 100)} min={0} max={100} unit="%" onChange={(v) => setAdvanced({ ...advanced, smooth: v / 100 })} />
                                     </div>
                                 </div>
                             )}
@@ -617,16 +786,10 @@ export default function HomePage() {
                             ) : (
                                 <>
                                     <Play className="w-5 h-5" />
-                                    Generar Gráfico
+                                    Aplicar Cambios
                                 </>
                             )}
                         </button>
-
-                        {error && (
-                            <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
-                                {error}
-                            </div>
-                        )}
                     </div>
 
                     {/* Preview */}
@@ -660,42 +823,12 @@ export default function HomePage() {
                                             </div>
                                         </div>
                                     )}
-
-                                    <div>
-                                        <h3 className="text-sm font-medium text-gray-700 mb-3">Datos ({previewData.length} registros)</h3>
-                                        <div className="border border-gray-200 rounded-lg overflow-hidden">
-                                            <table className="w-full text-sm">
-                                                <thead className="bg-gray-50">
-                                                    <tr>
-                                                        <th className="px-4 py-3 text-left font-medium text-gray-600">Categoría</th>
-                                                        <th className="px-4 py-3 text-right font-medium text-gray-600">Valor</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody className="divide-y divide-gray-100">
-                                                    {previewData.slice(0, 10).map((item, i) => (
-                                                        <tr key={i} className="hover:bg-gray-50">
-                                                            <td className="px-4 py-3 text-gray-900">{item.name}</td>
-                                                            <td className="px-4 py-3 text-right font-medium text-primary-600">{item.value}</td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
-                                            {previewData.length > 10 && (
-                                                <div className="px-4 py-2 bg-gray-50 text-center text-xs text-gray-500">
-                                                    +{previewData.length - 10} más
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
                                 </div>
                             ) : (
                                 <div className="h-[400px] flex items-center justify-center border-2 border-dashed border-gray-200 rounded-xl">
                                     <div className="text-center">
                                         <BarChart3 className="w-16 h-16 mx-auto text-gray-300 mb-4" />
                                         <p className="text-gray-500 font-medium">Tu gráfico aparecerá aquí</p>
-                                        <p className="text-gray-400 text-sm mt-1">
-                                            {properties.length === 0 ? 'Carga las propiedades de tu base de datos' : 'Selecciona las propiedades y genera el gráfico'}
-                                        </p>
                                     </div>
                                 </div>
                             )}
@@ -707,7 +840,6 @@ export default function HomePage() {
     )
 }
 
-// Toggle Component
 function ToggleOption({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
     return (
         <label className="flex items-center justify-between p-3 rounded-lg border border-gray-200 cursor-pointer hover:bg-gray-50">
@@ -723,7 +855,6 @@ function ToggleOption({ label, checked, onChange }: { label: string; checked: bo
     )
 }
 
-// Slider Component
 function SliderOption({ label, value, min, max, step = 1, unit = '', onChange }: {
     label: string; value: number; min: number; max: number; step?: number; unit?: string; onChange: (v: number) => void
 }) {
