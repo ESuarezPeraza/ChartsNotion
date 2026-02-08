@@ -39,15 +39,24 @@ interface AdvancedOptions {
     showLegend: boolean
     showGrid: boolean
     showLabels: boolean
+    // Line/Area options
     smooth: number
-    chartHeight: number
-    barRadius: number
     lineWidth: number
+    symbolSize: number
+    showSymbols: boolean
+    // Bar options
+    barRadius: number
+    barMaxWidth: number
+    // Pie options
+    pieInnerRadius: number
+    pieBorderWidth: number
+    // General
+    chartHeight: number
     fontSize: number
     sortBy: 'none' | 'x' | 'y' | 'manual'
     sortOrder: 'asc' | 'desc'
     limitResults: number
-    // New granular options
+    // Granular options
     manualOrder: string[]
     excludedCategories: string[]
     categoryColors: Record<string, string>
@@ -80,10 +89,19 @@ export default function HomePage() {
         showLegend: false,
         showGrid: true,
         showLabels: true,
+        // Line/Area
         smooth: 0.5,
-        chartHeight: 350,
-        barRadius: 6,
         lineWidth: 3,
+        symbolSize: 8,
+        showSymbols: true,
+        // Bar
+        barRadius: 6,
+        barMaxWidth: 60,
+        // Pie
+        pieInnerRadius: 45,
+        pieBorderWidth: 2,
+        // General
+        chartHeight: 350,
         fontSize: 12,
         sortBy: 'none',
         sortOrder: 'desc',
@@ -244,11 +262,16 @@ export default function HomePage() {
                 grid: String(advanced.showGrid),
                 labels: String(advanced.showLabels),
                 smooth: String(advanced.smooth),
-                radius: String(advanced.barRadius),
+                lineWidth: String(advanced.lineWidth),
+                symbolSize: String(advanced.symbolSize),
+                showSymbols: String(advanced.showSymbols),
+                barRadius: String(advanced.barRadius),
+                barMaxWidth: String(advanced.barMaxWidth),
+                pieInnerRadius: String(advanced.pieInnerRadius),
+                pieBorderWidth: String(advanced.pieBorderWidth),
                 sortBy: advanced.sortBy,
                 sortOrder: advanced.sortOrder,
                 fontSize: String(advanced.fontSize),
-                // Serialize new options
                 manualOrder: advanced.manualOrder.join(','),
                 excluded: advanced.excludedCategories.join(','),
                 catColors: JSON.stringify(advanced.categoryColors)
@@ -310,7 +333,7 @@ export default function HomePage() {
                 ...baseOptions,
                 series: [{
                     type: 'pie',
-                    radius: ['45%', '75%'],
+                    radius: [`${advanced.pieInnerRadius}%`, '75%'],
                     center: ['50%', advanced.showLegend ? '45%' : '55%'],
                     data: previewData.map((d, i) => ({
                         ...d,
@@ -322,7 +345,7 @@ export default function HomePage() {
                         formatter: '{b}: {c} ({d}%)'
                     } : { show: false },
                     emphasis: { itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0,0,0,0.2)' } },
-                    itemStyle: { borderRadius: advanced.barRadius, borderColor: '#fff', borderWidth: 2 },
+                    itemStyle: { borderRadius: 8, borderColor: '#fff', borderWidth: advanced.pieBorderWidth },
                 }],
             }
         }
@@ -362,7 +385,7 @@ export default function HomePage() {
                     itemStyle: {
                         borderRadius: [advanced.barRadius, advanced.barRadius, 0, 0],
                     },
-                    barMaxWidth: 60,
+                    barMaxWidth: advanced.barMaxWidth,
                     label: advanced.showLabels ? {
                         show: true,
                         position: 'top',
@@ -372,14 +395,15 @@ export default function HomePage() {
                 }),
                 ...(config.chartType === 'line' || config.chartType === 'area' ? {
                     smooth: advanced.smooth,
-                    lineStyle: { width: advanced.lineWidth, color: getCategoryColor(config.xProperty, 0) }, // Use first color for line
-                    symbolSize: 8,
+                    lineStyle: { width: advanced.lineWidth, color: getCategoryColor(config.xProperty, 0) },
+                    symbol: advanced.showSymbols ? 'circle' : 'none',
+                    symbolSize: advanced.symbolSize,
                     itemStyle: { color: getCategoryColor(config.xProperty, 0) },
                     areaStyle: config.chartType === 'area' ? {
                         color: {
                             type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
                             colorStops: [
-                                { offset: 0, color: getCategoryColor(config.xProperty, 0) + '40' }, // Simple alpha for now
+                                { offset: 0, color: getCategoryColor(config.xProperty, 0) + '40' },
                                 { offset: 1, color: getCategoryColor(config.xProperty, 0) + '05' }
                             ]
                         },
@@ -760,14 +784,44 @@ export default function HomePage() {
                                         <ToggleOption label="Leyenda" checked={advanced.showLegend} onChange={(v) => setAdvanced({ ...advanced, showLegend: v })} />
                                         <ToggleOption label="Grid" checked={advanced.showGrid} onChange={(v) => setAdvanced({ ...advanced, showGrid: v })} />
                                         <ToggleOption label="Etiquetas" checked={advanced.showLabels} onChange={(v) => setAdvanced({ ...advanced, showLabels: v })} />
+                                        {(config.chartType === 'line' || config.chartType === 'area') && (
+                                            <ToggleOption label="Puntos" checked={advanced.showSymbols} onChange={(v) => setAdvanced({ ...advanced, showSymbols: v })} />
+                                        )}
                                     </div>
 
-                                    {/* Sliders */}
+                                    {/* General Sliders */}
                                     <div className="space-y-4">
-                                        <SliderOption label="Altura" value={advanced.chartHeight} min={200} max={600} step={50} unit="px" onChange={(v) => setAdvanced({ ...advanced, chartHeight: v })} />
-                                        <SliderOption label="Radio de Barras" value={advanced.barRadius} min={0} max={20} onChange={(v) => setAdvanced({ ...advanced, barRadius: v })} />
-                                        <SliderOption label="Suavidad de Curva" value={Math.round(advanced.smooth * 100)} min={0} max={100} unit="%" onChange={(v) => setAdvanced({ ...advanced, smooth: v / 100 })} />
+                                        <SliderOption label="Altura del Gráfico" value={advanced.chartHeight} min={200} max={600} step={50} unit="px" onChange={(v) => setAdvanced({ ...advanced, chartHeight: v })} />
+                                        <SliderOption label="Tamaño de Fuente" value={advanced.fontSize} min={10} max={18} onChange={(v) => setAdvanced({ ...advanced, fontSize: v })} />
                                     </div>
+
+                                    {/* Chart-specific options */}
+                                    {(config.chartType === 'line' || config.chartType === 'area') && (
+                                        <div className="space-y-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                                            <h4 className="text-sm font-semibold text-blue-800">Opciones de Línea/Área</h4>
+                                            <SliderOption label="Grosor de Línea" value={advanced.lineWidth} min={1} max={8} unit="px" onChange={(v) => setAdvanced({ ...advanced, lineWidth: v })} />
+                                            <SliderOption label="Suavidad de Curva" value={Math.round(advanced.smooth * 100)} min={0} max={100} unit="%" onChange={(v) => setAdvanced({ ...advanced, smooth: v / 100 })} />
+                                            {advanced.showSymbols && (
+                                                <SliderOption label="Tamaño de Puntos" value={advanced.symbolSize} min={4} max={20} onChange={(v) => setAdvanced({ ...advanced, symbolSize: v })} />
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {config.chartType === 'bar' && (
+                                        <div className="space-y-4 p-4 bg-green-50 rounded-lg border border-green-200">
+                                            <h4 className="text-sm font-semibold text-green-800">Opciones de Barras</h4>
+                                            <SliderOption label="Radio de Esquinas" value={advanced.barRadius} min={0} max={20} onChange={(v) => setAdvanced({ ...advanced, barRadius: v })} />
+                                            <SliderOption label="Ancho Máximo" value={advanced.barMaxWidth} min={20} max={100} unit="px" onChange={(v) => setAdvanced({ ...advanced, barMaxWidth: v })} />
+                                        </div>
+                                    )}
+
+                                    {config.chartType === 'pie' && (
+                                        <div className="space-y-4 p-4 bg-purple-50 rounded-lg border border-purple-200">
+                                            <h4 className="text-sm font-semibold text-purple-800">Opciones de Pastel</h4>
+                                            <SliderOption label="Radio Interior (Dona)" value={advanced.pieInnerRadius} min={0} max={70} unit="%" onChange={(v) => setAdvanced({ ...advanced, pieInnerRadius: v })} />
+                                            <SliderOption label="Grosor del Borde" value={advanced.pieBorderWidth} min={0} max={8} unit="px" onChange={(v) => setAdvanced({ ...advanced, pieBorderWidth: v })} />
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </div>

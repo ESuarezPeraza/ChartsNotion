@@ -30,8 +30,18 @@ export default function ChartPage({ params }: ChartPageProps) {
     const showLegend = searchParams.get('legend') === 'true'
     const showLabels = searchParams.get('labels') === 'true'
     const showGrid = searchParams.get('grid') === 'true'
+    // Line/Area options
     const smooth = parseFloat(searchParams.get('smooth') || '0.5')
-    const barRadius = parseInt(searchParams.get('radius') || '6')
+    const lineWidth = parseInt(searchParams.get('lineWidth') || '3')
+    const symbolSize = parseInt(searchParams.get('symbolSize') || '8')
+    const showSymbols = searchParams.get('showSymbols') !== 'false'
+    // Bar options
+    const barRadius = parseInt(searchParams.get('barRadius') || '6')
+    const barMaxWidth = parseInt(searchParams.get('barMaxWidth') || '60')
+    // Pie options
+    const pieInnerRadius = parseInt(searchParams.get('pieInnerRadius') || '45')
+    const pieBorderWidth = parseInt(searchParams.get('pieBorderWidth') || '2')
+    // Sorting
     const sortBy = searchParams.get('sortBy') as 'x' | 'y' | 'manual' | undefined
     const sortOrder = searchParams.get('sortOrder') as 'asc' | 'desc' | undefined
     const fontSize = parseInt(searchParams.get('fontSize') || '12')
@@ -168,7 +178,7 @@ export default function ChartPage({ params }: ChartPageProps) {
                 ...baseOptions,
                 series: [{
                     type: 'pie',
-                    radius: ['45%', '75%'],
+                    radius: [`${pieInnerRadius}%`, '75%'],
                     center: ['50%', showLegend ? '50%' : '55%'],
                     data: processedData.map((d, i) => ({
                         ...d,
@@ -180,7 +190,7 @@ export default function ChartPage({ params }: ChartPageProps) {
                         fontSize,
                         formatter: '{b}: {c} ({d}%)'
                     } : { show: false },
-                    itemStyle: { borderRadius: barRadius, borderColor: '#fff', borderWidth: 2 },
+                    itemStyle: { borderRadius: 8, borderColor: '#fff', borderWidth: pieBorderWidth },
                 }],
             }
         }
@@ -211,7 +221,7 @@ export default function ChartPage({ params }: ChartPageProps) {
             },
             series: [{
                 name: xProperty,
-                type: (type === 'area' ? 'line' : type) as 'line' | 'bar' | 'pie', // Cast to valid series types
+                type: (type === 'area' ? 'line' : type) as 'line' | 'bar' | 'pie',
                 data: processedData.map((d, i) => ({
                     value: d.value,
                     itemStyle: { color: getCategoryColor(d.name, i) }
@@ -220,7 +230,7 @@ export default function ChartPage({ params }: ChartPageProps) {
                     itemStyle: {
                         borderRadius: [barRadius, barRadius, 0, 0],
                     },
-                    barMaxWidth: 60,
+                    barMaxWidth: barMaxWidth,
                     label: showLabels ? {
                         show: true,
                         position: 'top',
@@ -230,8 +240,9 @@ export default function ChartPage({ params }: ChartPageProps) {
                 }),
                 ...(type === 'line' || type === 'area' ? {
                     smooth: smooth,
-                    lineStyle: { width: 3, color: getCategoryColor(xProperty, 0) }, // Use first color or category specific if applied
-                    symbolSize: 8,
+                    lineStyle: { width: lineWidth, color: getCategoryColor(xProperty, 0) },
+                    symbol: showSymbols ? 'circle' : 'none',
+                    symbolSize: symbolSize,
                     itemStyle: { color: getCategoryColor(xProperty, 0) },
                     areaStyle: type === 'area' ? {
                         color: {
