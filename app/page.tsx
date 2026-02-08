@@ -53,6 +53,8 @@ interface AdvancedOptions {
     // General
     chartHeight: number
     fontSize: number
+    showXAxis: boolean
+    showYAxis: boolean
     sortBy: 'none' | 'x' | 'y' | 'manual'
     sortOrder: 'asc' | 'desc'
     limitResults: number
@@ -103,6 +105,8 @@ export default function HomePage() {
         // General
         chartHeight: 350,
         fontSize: 12,
+        showXAxis: true,
+        showYAxis: true,
         sortBy: 'none',
         sortOrder: 'desc',
         limitResults: 0,
@@ -272,6 +276,8 @@ export default function HomePage() {
                 sortBy: advanced.sortBy,
                 sortOrder: advanced.sortOrder,
                 fontSize: String(advanced.fontSize),
+                showXAxis: String(advanced.showXAxis),
+                showYAxis: String(advanced.showYAxis),
                 manualOrder: advanced.manualOrder.join(','),
                 excluded: advanced.excludedCategories.join(','),
                 catColors: JSON.stringify(advanced.categoryColors)
@@ -361,6 +367,7 @@ export default function HomePage() {
             },
             xAxis: {
                 type: 'category',
+                show: advanced.showXAxis,
                 data: previewData.map(d => d.name),
                 axisLine: { lineStyle: { color: '#e5e7eb' } },
                 axisLabel: { color: '#6b7280', fontSize: advanced.fontSize - 1 },
@@ -368,6 +375,7 @@ export default function HomePage() {
             },
             yAxis: {
                 type: 'value',
+                show: advanced.showYAxis,
                 axisLine: { show: false },
                 splitLine: advanced.showGrid ? {
                     lineStyle: { color: '#f3f4f6', type: 'dashed' }
@@ -784,6 +792,12 @@ export default function HomePage() {
                                         <ToggleOption label="Leyenda" checked={advanced.showLegend} onChange={(v) => setAdvanced({ ...advanced, showLegend: v })} />
                                         <ToggleOption label="Grid" checked={advanced.showGrid} onChange={(v) => setAdvanced({ ...advanced, showGrid: v })} />
                                         <ToggleOption label="Etiquetas" checked={advanced.showLabels} onChange={(v) => setAdvanced({ ...advanced, showLabels: v })} />
+                                        {config.chartType !== 'pie' && (
+                                            <>
+                                                <ToggleOption label="Eje X" checked={advanced.showXAxis} onChange={(v) => setAdvanced({ ...advanced, showXAxis: v })} />
+                                                <ToggleOption label="Eje Y" checked={advanced.showYAxis} onChange={(v) => setAdvanced({ ...advanced, showYAxis: v })} />
+                                            </>
+                                        )}
                                         {(config.chartType === 'line' || config.chartType === 'area') && (
                                             <ToggleOption label="Puntos" checked={advanced.showSymbols} onChange={(v) => setAdvanced({ ...advanced, showSymbols: v })} />
                                         )}

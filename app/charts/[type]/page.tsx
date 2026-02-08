@@ -45,6 +45,9 @@ export default function ChartPage({ params }: ChartPageProps) {
     const sortBy = searchParams.get('sortBy') as 'x' | 'y' | 'manual' | undefined
     const sortOrder = searchParams.get('sortOrder') as 'asc' | 'desc' | undefined
     const fontSize = parseInt(searchParams.get('fontSize') || '12')
+    // Axis visibility
+    const showXAxis = searchParams.get('showXAxis') !== 'false'
+    const showYAxis = searchParams.get('showYAxis') !== 'false'
 
     // Granular options
     const manualOrderParam = searchParams.get('manualOrder')
@@ -206,6 +209,7 @@ export default function ChartPage({ params }: ChartPageProps) {
             },
             xAxis: {
                 type: 'category',
+                show: showXAxis,
                 data: processedData.map(d => d.name),
                 axisLine: { lineStyle: { color: '#e5e7eb' } },
                 axisLabel: { color: '#6b7280', fontSize: fontSize - 1 },
@@ -213,6 +217,7 @@ export default function ChartPage({ params }: ChartPageProps) {
             },
             yAxis: {
                 type: 'value',
+                show: showYAxis,
                 axisLine: { show: false },
                 splitLine: showGrid ? {
                     lineStyle: { color: '#f3f4f6', type: 'dashed' }
