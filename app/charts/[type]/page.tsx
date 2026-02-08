@@ -167,28 +167,31 @@ export default function ChartPage({ params }: ChartPageProps) {
     const getChartOptions = (): EChartsOption => {
         const titleText = customTitle
 
-        // Dark mode colors
-        const textColor = darkMode ? '#e5e7eb' : '#374151'
-        const textColorSecondary = darkMode ? '#9ca3af' : '#6b7280'
-        const borderColor = darkMode ? '#374151' : '#e5e7eb'
-        const gridColor = darkMode ? '#374151' : '#f3f4f6'
-        const tooltipBg = darkMode ? '#1f2937' : '#fff'
-        const chartBg = darkMode ? '#111827' : 'transparent'
+        // Dark mode colors - Notion style
+        const textColor = darkMode ? '#ffffffcf' : '#37352f'
+        const textColorSecondary = darkMode ? '#ffffff73' : '#6b7280'
+        const borderColor = darkMode ? '#ffffff1a' : '#e5e7eb'
+        const gridColor = darkMode ? '#ffffff0d' : '#f3f4f6'
+        const tooltipBg = darkMode ? '#252525' : '#fff'
+        // Apply bgColor only when not in dark mode, dark mode uses its own bg
+        const chartBg = darkMode ? '#191919' : (bgColor === 'transparent' ? 'transparent' : bgColor)
 
         const baseOptions = {
             backgroundColor: chartBg,
-            textStyle: { fontFamily: 'Inter, sans-serif', color: textColor, fontSize },
+            textStyle: { fontFamily: 'Inter, -apple-system, sans-serif', color: textColor, fontSize },
             tooltip: {
                 backgroundColor: tooltipBg,
                 borderColor: borderColor,
-                borderWidth: 1,
-                textStyle: { color: textColor, fontFamily: 'Inter, sans-serif', fontSize },
+                borderWidth: darkMode ? 0 : 1,
+                textStyle: { color: textColor, fontFamily: 'Inter, -apple-system, sans-serif', fontSize },
                 trigger: (type === 'pie' ? 'item' : 'axis') as 'item' | 'axis',
-                extraCssText: 'box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);',
+                extraCssText: darkMode
+                    ? 'box-shadow: 0 4px 12px rgba(0,0,0,0.4); border-radius: 4px;'
+                    : 'box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);',
             },
             title: titleText ? {
                 text: titleText,
-                textStyle: { color: darkMode ? '#f3f4f6' : '#111827', fontWeight: 600, fontSize: fontSize + 4 },
+                textStyle: { color: darkMode ? '#ffffffcf' : '#37352f', fontWeight: 600, fontSize: fontSize + 4 },
                 left: 'center',
                 top: 10,
             } : undefined,
@@ -212,11 +215,11 @@ export default function ChartPage({ params }: ChartPageProps) {
                     })),
                     label: showLabels ? {
                         show: true,
-                        color: '#374151',
+                        color: textColor,
                         fontSize,
                         formatter: '{b}: {c} ({d}%)'
                     } : { show: false },
-                    itemStyle: { borderRadius: 8, borderColor: '#fff', borderWidth: pieBorderWidth },
+                    itemStyle: { borderRadius: 8, borderColor: darkMode ? '#191919' : '#fff', borderWidth: pieBorderWidth },
                 }],
             }
         }
@@ -234,8 +237,8 @@ export default function ChartPage({ params }: ChartPageProps) {
                 type: 'category',
                 show: showXAxis,
                 data: processedData.map(d => d.name),
-                axisLine: { lineStyle: { color: '#e5e7eb' } },
-                axisLabel: { color: '#6b7280', fontSize: fontSize - 1 },
+                axisLine: { lineStyle: { color: borderColor } },
+                axisLabel: { color: textColorSecondary, fontSize: fontSize - 1 },
                 axisTick: { show: false },
             },
             yAxis: {
@@ -243,9 +246,9 @@ export default function ChartPage({ params }: ChartPageProps) {
                 show: showYAxis,
                 axisLine: { show: false },
                 splitLine: showGrid ? {
-                    lineStyle: { color: '#f3f4f6', type: 'dashed' }
+                    lineStyle: { color: gridColor, type: 'dashed' }
                 } : { show: false },
-                axisLabel: { color: '#6b7280', fontSize: fontSize - 1 },
+                axisLabel: { color: textColorSecondary, fontSize: fontSize - 1 },
             },
             series: [{
                 name: xProperty,
@@ -297,8 +300,8 @@ export default function ChartPage({ params }: ChartPageProps) {
                     onClick={handleRefresh}
                     disabled={isRefreshing}
                     className={`p-2 rounded-lg transition-all shadow-sm ${darkMode
-                            ? 'bg-gray-700 hover:bg-gray-600 text-gray-200'
-                            : 'bg-white hover:bg-gray-50 text-gray-600 border border-gray-200'
+                        ? 'bg-gray-700 hover:bg-gray-600 text-gray-200'
+                        : 'bg-white hover:bg-gray-50 text-gray-600 border border-gray-200'
                         }`}
                     title="Actualizar datos"
                 >
@@ -307,8 +310,8 @@ export default function ChartPage({ params }: ChartPageProps) {
                 <button
                     onClick={() => setDarkMode(!darkMode)}
                     className={`p-2 rounded-lg transition-all shadow-sm ${darkMode
-                            ? 'bg-gray-700 hover:bg-gray-600 text-yellow-400'
-                            : 'bg-white hover:bg-gray-50 text-gray-600 border border-gray-200'
+                        ? 'bg-gray-700 hover:bg-gray-600 text-yellow-400'
+                        : 'bg-white hover:bg-gray-50 text-gray-600 border border-gray-200'
                         }`}
                     title={darkMode ? 'Modo claro' : 'Modo oscuro'}
                 >
