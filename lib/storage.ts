@@ -10,7 +10,7 @@ export interface SavedChart {
         databaseId: string
         xProperty: string
         yProperty: string
-        chartType: 'bar' | 'line' | 'pie' | 'area'
+        chartType: 'bar' | 'line' | 'pie' | 'area' | 'contribution'
         aggregation: 'sum' | 'count' | 'average'
         title: string
     }

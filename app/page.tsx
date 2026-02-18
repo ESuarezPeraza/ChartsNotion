@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Plus, BarChart3, LineChart, PieChart, TrendingUp, ExternalLink, Trash2, Copy, Check, Settings, Pencil } from 'lucide-react'
+import { Plus, BarChart3, LineChart, PieChart, TrendingUp, ExternalLink, Trash2, Copy, Check, Settings, Pencil, GitCommitHorizontal } from 'lucide-react'
 import Link from 'next/link'
 import { getSavedCharts, deleteChart, type SavedChart } from '@/lib/storage'
 
@@ -10,6 +10,7 @@ const chartTypeIcons: Record<string, React.ReactNode> = {
     line: <LineChart className="w-6 h-6" />,
     pie: <PieChart className="w-6 h-6" />,
     area: <TrendingUp className="w-6 h-6" />,
+    contribution: <GitCommitHorizontal className="w-6 h-6" />,
 }
 
 const chartTypeLabels: Record<string, string> = {
@@ -17,6 +18,7 @@ const chartTypeLabels: Record<string, string> = {
     line: 'Línea',
     pie: 'Pastel',
     area: 'Área',
+    contribution: 'Contribuciones',
 }
 
 export default function HomePage() {
@@ -110,7 +112,8 @@ export default function HomePage() {
                                             <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${chart.config.chartType === 'bar' ? 'bg-blue-100 text-blue-600' :
                                                 chart.config.chartType === 'line' ? 'bg-green-100 text-green-600' :
                                                     chart.config.chartType === 'pie' ? 'bg-purple-100 text-purple-600' :
-                                                        'bg-orange-100 text-orange-600'
+                                                        chart.config.chartType === 'contribution' ? 'bg-emerald-100 text-emerald-600' :
+                                                            'bg-orange-100 text-orange-600'
                                                 }`}>
                                                 {chartTypeIcons[chart.config.chartType]}
                                             </div>
@@ -128,15 +131,32 @@ export default function HomePage() {
 
                                 {/* Chart Info */}
                                 <div className="p-4 space-y-3">
-                                    <div className="text-sm">
-                                        <span className="text-gray-500">Eje X:</span>{' '}
-                                        <span className="font-medium text-gray-700">{chart.config.xProperty}</span>
-                                    </div>
-                                    {chart.config.yProperty && (
-                                        <div className="text-sm">
-                                            <span className="text-gray-500">Eje Y:</span>{' '}
-                                            <span className="font-medium text-gray-700">{chart.config.yProperty}</span>
-                                        </div>
+                                    {chart.config.chartType === 'contribution' ? (
+                                        <>
+                                            <div className="text-sm">
+                                                <span className="text-gray-500">Fecha:</span>{' '}
+                                                <span className="font-medium text-gray-700">{chart.config.xProperty}</span>
+                                            </div>
+                                            {chart.config.yProperty && (
+                                                <div className="text-sm">
+                                                    <span className="text-gray-500">Asunto:</span>{' '}
+                                                    <span className="font-medium text-gray-700">{chart.config.yProperty}</span>
+                                                </div>
+                                            )}
+                                        </>
+                                    ) : (
+                                        <>
+                                            <div className="text-sm">
+                                                <span className="text-gray-500">Eje X:</span>{' '}
+                                                <span className="font-medium text-gray-700">{chart.config.xProperty}</span>
+                                            </div>
+                                            {chart.config.yProperty && (
+                                                <div className="text-sm">
+                                                    <span className="text-gray-500">Eje Y:</span>{' '}
+                                                    <span className="font-medium text-gray-700">{chart.config.yProperty}</span>
+                                                </div>
+                                            )}
+                                        </>
                                     )}
                                     <div className="text-xs text-gray-400">
                                         Creado: {formatDate(chart.createdAt)}

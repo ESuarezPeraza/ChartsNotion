@@ -1,7 +1,7 @@
 import type { PageObjectResponse } from '@notionhq/client/build/src/api-endpoints'
 
 // Chart Types
-export type ChartType = 'bar' | 'line' | 'pie' | 'area'
+export type ChartType = 'bar' | 'line' | 'pie' | 'area' | 'contribution'
 
 // Chart Data Point
 export interface ChartDataPoint {
@@ -41,6 +41,18 @@ export interface ChartQueryParams {
 
 // Notion Page with typed properties
 export type NotionPage = PageObjectResponse
+
+// Contribution Graph Entry
+export interface ContributionEntry {
+    date: string        // ISO date string (YYYY-MM-DD)
+    subject: string     // Subject/title of the activity
+    description: string // Description of the activity
+}
+
+// Contribution Graph API Response
+export interface ContributionApiResponse {
+    entries: ContributionEntry[]
+}
 
 // Property types we support
 export type SupportedPropertyType =

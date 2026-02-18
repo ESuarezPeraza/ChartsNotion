@@ -2,7 +2,8 @@
 
 import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { BarChart3, LineChart, PieChart, TrendingUp, Play, Copy, ExternalLink, Check, Database, ChevronRight, RefreshCw, ChevronDown, Settings, Palette, Grid3X3, Type, ArrowUpDown, ArrowUpAZ, GripVertical, Eye, EyeOff, ChevronsUp, ChevronsDown, MoveUp, MoveDown, ArrowLeft, Save } from 'lucide-react'
+import { BarChart3, LineChart, PieChart, TrendingUp, Play, Copy, ExternalLink, Check, Database, ChevronRight, RefreshCw, ChevronDown, Settings, Palette, Grid3X3, Type, ArrowUpDown, ArrowUpAZ, GripVertical, Eye, EyeOff, ChevronsUp, ChevronsDown, MoveUp, MoveDown, ArrowLeft, Save, GitCommitHorizontal } from 'lucide-react'
+import type { ContributionEntry } from '@/types'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { saveChart, updateChart, getChartById } from '@/lib/storage'
@@ -16,7 +17,16 @@ const BaseChart = dynamic(() => import('@/components/charts/BaseChart'), {
     )
 })
 
-type ChartType = 'bar' | 'line' | 'pie' | 'area'
+const ContributionGraph = dynamic(() => import('@/components/charts/ContributionGraph'), {
+    ssr: false,
+    loading: () => (
+        <div className="h-[200px] flex items-center justify-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+        </div>
+    )
+})
+
+type ChartType = 'bar' | 'line' | 'pie' | 'area' | 'contribution'
 
 interface Property {
     name: string
@@ -139,6 +149,10 @@ function CreatePageContent() {
     const [isLoadingSchema, setIsLoadingSchema] = useState(false)
     const [schemaError, setSchemaError] = useState<string | null>(null)
     const [previewData, setPreviewData] = useState<{ name: string; value: number }[] | null>(null)
+    const [contributionPreviewData, setContributionPreviewData] = useState<ContributionEntry[] | null>(null)
+    // Contribution-specific property names
+    const [contribSubjectProp, setContribSubjectProp] = useState('')
+    const [contribDescProp, setContribDescProp] = useState('')
     const [isLoading, setIsLoading] = useState(false)
     const [error, setError] = useState<string | null>(null)
     const [embedUrl, setEmbedUrl] = useState<string>('')
@@ -176,6 +190,7 @@ function CreatePageContent() {
         { type: 'line', icon: <LineChart className="w-5 h-5" />, label: 'Líneas' },
         { type: 'pie', icon: <PieChart className="w-5 h-5" />, label: 'Pastel' },
         { type: 'area', icon: <TrendingUp className="w-5 h-5" />, label: 'Área' },
+        { type: 'contribution', icon: <GitCommitHorizontal className="w-5 h-5" />, label: 'Contrib.' },
     ]
 
     const loadSchema = async () => {
@@ -206,132 +221,165 @@ function CreatePageContent() {
     }
 
     const handlePreview = async () => {
-        if (!config.databaseId || !config.xProperty) {
-            setError('El ID de la base de datos y la propiedad X son requeridos')
-            return
+        // Contribution graph requires different validation
+        if (config.chartType === 'contribution') {
+            if (!config.databaseId || !config.xProperty || !contribSubjectProp || !contribDescProp) {
+                setError('El ID de la base de datos, la propiedad de Fecha, Asunto y Descripción son requeridos')
+                return
+            }
+        } else {
+            if (!config.databaseId || !config.xProperty) {
+                setError('El ID de la base de datos y la propiedad X son requeridos')
+                return
+            }
         }
 
         setIsLoading(true)
         setError(null)
 
         try {
-            const params = new URLSearchParams({
-                x: config.xProperty,
-                ...(config.yProperty && { y: config.yProperty }),
-                agg: config.aggregation,
-            })
+            if (config.chartType === 'contribution') {
+                // Fetch contribution data
+                const params = new URLSearchParams({
+                    date: config.xProperty,
+                    subject: contribSubjectProp,
+                    description: contribDescProp,
+                })
 
-            const res = await fetch(`/api/notion/${config.databaseId}?${params}`)
-            const data = await res.json()
+                const res = await fetch(`/api/notion/contribution/${config.databaseId}?${params}`)
+                const data = await res.json()
 
-            if (!res.ok) {
-                throw new Error(data.error || 'Error al obtener datos')
-            }
-
-            let processedData = data.data as { name: string; value: number }[]
-
-            // Update available categories for manual sorting UI if needed
-            // Only update if list is vastly different or empty
-            const currentCategories = processedData.map(d => d.name)
-
-            // If manual sort is empty, initialize it with current order
-            if (advanced.manualOrder.length === 0) {
-                setAdvanced(prev => ({ ...prev, manualOrder: currentCategories }))
-            } else {
-                // If there are new categories not in manualOrder, append them
-                const newCats = currentCategories.filter(c => !advanced.manualOrder.includes(c))
-                if (newCats.length > 0) {
-                    setAdvanced(prev => ({ ...prev, manualOrder: [...prev.manualOrder, ...newCats] }))
+                if (!res.ok) {
+                    throw new Error(data.error || 'Error al obtener datos')
                 }
-            }
-            setAvailableCategories(currentCategories)
 
-            // Filtering
-            processedData = processedData.filter(d => !advanced.excludedCategories.includes(d.name))
+                setContributionPreviewData(data.entries)
+                setPreviewData(null)
 
-            // Sorting logic
-            if (advanced.sortBy === 'manual') {
-                processedData.sort((a, b) => {
-                    const idxA = advanced.manualOrder.indexOf(a.name)
-                    const idxB = advanced.manualOrder.indexOf(b.name)
-                    // Retrieve index, if not found (e.g. dynamic new data), put at end
-                    const aPos = idxA === -1 ? 9999 : idxA
-                    const bPos = idxB === -1 ? 9999 : idxB
-                    return aPos - bPos
+                const baseUrl = window.location.origin
+                const chartParams = new URLSearchParams({
+                    db: config.databaseId,
+                    date: config.xProperty,
+                    subject: contribSubjectProp,
+                    description: contribDescProp,
+                    ...(config.title && { title: config.title }),
+                    bg: advanced.backgroundColor,
                 })
-            } else if (advanced.sortBy !== 'none') {
-                processedData.sort((a, b) => {
-                    let valA: any = advanced.sortBy === 'x' ? a.name : a.value
-                    let valB: any = advanced.sortBy === 'x' ? b.name : b.value
 
-                    // Check if values are dates (ISO format: YYYY-MM-DD or with time)
-                    const isDateA = typeof valA === 'string' && /^\d{4}-\d{2}-\d{2}/.test(valA)
-                    const isDateB = typeof valB === 'string' && /^\d{4}-\d{2}-\d{2}/.test(valB)
+                setEmbedUrl(`${baseUrl}/charts/contribution?${chartParams}`)
+            } else {
+                const params = new URLSearchParams({
+                    x: config.xProperty,
+                    ...(config.yProperty && { y: config.yProperty }),
+                    agg: config.aggregation,
+                })
 
-                    if (isDateA && isDateB) {
-                        // Sort by date timestamp
-                        valA = new Date(valA).getTime()
-                        valB = new Date(valB).getTime()
-                    } else {
-                        // Try numeric sorting
-                        const numA = Number(valA)
-                        const numB = Number(valB)
+                const res = await fetch(`/api/notion/${config.databaseId}?${params}`)
+                const data = await res.json()
 
-                        if (advanced.sortBy === 'x' && !isNaN(numA) && !isNaN(numB)) {
-                            valA = numA
-                            valB = numB
-                        }
+                if (!res.ok) {
+                    throw new Error(data.error || 'Error al obtener datos')
+                }
+
+                let processedData = data.data as { name: string; value: number }[]
+
+                // Update available categories for manual sorting UI if needed
+                const currentCategories = processedData.map(d => d.name)
+
+                if (advanced.manualOrder.length === 0) {
+                    setAdvanced(prev => ({ ...prev, manualOrder: currentCategories }))
+                } else {
+                    const newCats = currentCategories.filter(c => !advanced.manualOrder.includes(c))
+                    if (newCats.length > 0) {
+                        setAdvanced(prev => ({ ...prev, manualOrder: [...prev.manualOrder, ...newCats] }))
                     }
+                }
+                setAvailableCategories(currentCategories)
 
-                    if (valA < valB) return advanced.sortOrder === 'asc' ? -1 : 1
-                    if (valA > valB) return advanced.sortOrder === 'asc' ? 1 : -1
-                    return 0
+                // Filtering
+                processedData = processedData.filter(d => !advanced.excludedCategories.includes(d.name))
+
+                // Sorting logic
+                if (advanced.sortBy === 'manual') {
+                    processedData.sort((a, b) => {
+                        const idxA = advanced.manualOrder.indexOf(a.name)
+                        const idxB = advanced.manualOrder.indexOf(b.name)
+                        const aPos = idxA === -1 ? 9999 : idxA
+                        const bPos = idxB === -1 ? 9999 : idxB
+                        return aPos - bPos
+                    })
+                } else if (advanced.sortBy !== 'none') {
+                    processedData.sort((a, b) => {
+                        let valA: any = advanced.sortBy === 'x' ? a.name : a.value
+                        let valB: any = advanced.sortBy === 'x' ? b.name : b.value
+
+                        const isDateA = typeof valA === 'string' && /^\d{4}-\d{2}-\d{2}/.test(valA)
+                        const isDateB = typeof valB === 'string' && /^\d{4}-\d{2}-\d{2}/.test(valB)
+
+                        if (isDateA && isDateB) {
+                            valA = new Date(valA).getTime()
+                            valB = new Date(valB).getTime()
+                        } else {
+                            const numA = Number(valA)
+                            const numB = Number(valB)
+                            if (advanced.sortBy === 'x' && !isNaN(numA) && !isNaN(numB)) {
+                                valA = numA
+                                valB = numB
+                            }
+                        }
+
+                        if (valA < valB) return advanced.sortOrder === 'asc' ? -1 : 1
+                        if (valA > valB) return advanced.sortOrder === 'asc' ? 1 : -1
+                        return 0
+                    })
+                }
+
+                // Limit results
+                if (advanced.limitResults > 0) {
+                    processedData = processedData.slice(0, advanced.limitResults)
+                }
+
+                setPreviewData(processedData)
+                setContributionPreviewData(null)
+
+                const baseUrl = window.location.origin
+                const chartParams = new URLSearchParams({
+                    db: config.databaseId,
+                    x: config.xProperty,
+                    ...(config.yProperty && { y: config.yProperty }),
+                    agg: config.aggregation,
+                    ...(config.title && { title: config.title }),
+                    colors: advanced.colorPalette === 'custom'
+                        ? advanced.customColors.join(',')
+                        : colorPalettes[advanced.colorPalette].colors.join(','),
+                    legend: String(advanced.showLegend),
+                    grid: String(advanced.showGrid),
+                    labels: String(advanced.showLabels),
+                    smooth: String(advanced.smooth),
+                    lineWidth: String(advanced.lineWidth),
+                    symbolSize: String(advanced.symbolSize),
+                    showSymbols: String(advanced.showSymbols),
+                    barRadius: String(advanced.barRadius),
+                    barMaxWidth: String(advanced.barMaxWidth),
+                    pieInnerRadius: String(advanced.pieInnerRadius),
+                    pieBorderWidth: String(advanced.pieBorderWidth),
+                    sortBy: advanced.sortBy,
+                    sortOrder: advanced.sortOrder,
+                    fontSize: String(advanced.fontSize),
+                    showXAxis: String(advanced.showXAxis),
+                    showYAxis: String(advanced.showYAxis),
+                    bg: advanced.backgroundColor,
+                    manualOrder: advanced.manualOrder.join(','),
+                    excluded: advanced.excludedCategories.join(','),
+                    catColors: JSON.stringify(advanced.categoryColors)
                 })
+
+                setEmbedUrl(`${baseUrl}/charts/${config.chartType}?${chartParams}`)
             }
-
-            // Limit results
-            if (advanced.limitResults > 0) {
-                processedData = processedData.slice(0, advanced.limitResults)
-            }
-
-            setPreviewData(processedData)
-
-            const baseUrl = window.location.origin
-            const chartParams = new URLSearchParams({
-                db: config.databaseId,
-                x: config.xProperty,
-                ...(config.yProperty && { y: config.yProperty }),
-                agg: config.aggregation,
-                ...(config.title && { title: config.title }),
-                colors: advanced.colorPalette === 'custom'
-                    ? advanced.customColors.join(',')
-                    : colorPalettes[advanced.colorPalette].colors.join(','),
-                legend: String(advanced.showLegend),
-                grid: String(advanced.showGrid),
-                labels: String(advanced.showLabels),
-                smooth: String(advanced.smooth),
-                lineWidth: String(advanced.lineWidth),
-                symbolSize: String(advanced.symbolSize),
-                showSymbols: String(advanced.showSymbols),
-                barRadius: String(advanced.barRadius),
-                barMaxWidth: String(advanced.barMaxWidth),
-                pieInnerRadius: String(advanced.pieInnerRadius),
-                pieBorderWidth: String(advanced.pieBorderWidth),
-                sortBy: advanced.sortBy,
-                sortOrder: advanced.sortOrder,
-                fontSize: String(advanced.fontSize),
-                showXAxis: String(advanced.showXAxis),
-                showYAxis: String(advanced.showYAxis),
-                bg: advanced.backgroundColor,
-                manualOrder: advanced.manualOrder.join(','),
-                excluded: advanced.excludedCategories.join(','),
-                catColors: JSON.stringify(advanced.categoryColors)
-            })
-
-            setEmbedUrl(`${baseUrl}/charts/${config.chartType}?${chartParams}`)
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Error desconocido')
             setPreviewData(null)
+            setContributionPreviewData(null)
         } finally {
             setIsLoading(false)
         }
@@ -615,52 +663,10 @@ function CreatePageContent() {
                                     </div>
                                 )}
 
-                                {/* X Property */}
-                                <div>
-                                    <label className="label">Eje X (Categorías)</label>
-                                    <div className="relative">
-                                        <select
-                                            value={config.xProperty}
-                                            onChange={(e) => setConfig({ ...config, xProperty: e.target.value })}
-                                            disabled={properties.length === 0}
-                                            className="input appearance-none pr-10"
-                                        >
-                                            <option value="">{properties.length === 0 ? 'Carga las propiedades primero' : 'Selecciona...'}</option>
-                                            {properties.map((prop) => (
-                                                <option key={prop.name} value={prop.name}>
-                                                    {prop.name} ({getPropertyTypeLabel(prop.type)})
-                                                </option>
-                                            ))}
-                                        </select>
-                                        <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
-                                    </div>
-                                </div>
-
-                                {/* Y Property */}
-                                <div>
-                                    <label className="label">Eje Y (Valores) <span className="text-gray-400 font-normal">- Opcional</span></label>
-                                    <div className="relative">
-                                        <select
-                                            value={config.yProperty}
-                                            onChange={(e) => setConfig({ ...config, yProperty: e.target.value })}
-                                            disabled={properties.length === 0}
-                                            className="input appearance-none pr-10"
-                                        >
-                                            <option value="">Usar conteo</option>
-                                            {properties.filter(p => p.isNumeric).map((prop) => (
-                                                <option key={prop.name} value={prop.name}>
-                                                    {prop.name} ({getPropertyTypeLabel(prop.type)})
-                                                </option>
-                                            ))}
-                                        </select>
-                                        <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
-                                    </div>
-                                </div>
-
                                 {/* Chart Type */}
                                 <div>
                                     <label className="label">Tipo de Gráfico</label>
-                                    <div className="grid grid-cols-4 gap-2">
+                                    <div className="grid grid-cols-5 gap-2">
                                         {chartTypes.map(({ type, icon, label }) => (
                                             <button
                                                 key={type}
@@ -676,28 +682,138 @@ function CreatePageContent() {
                                         ))}
                                     </div>
                                 </div>
-                                {/* Aggregation */}
-                                <div>
-                                    <label className="label">Agregación</label>
-                                    <div className="grid grid-cols-3 gap-2">
-                                        {([
-                                            { value: 'count', label: 'Contar' },
-                                            { value: 'sum', label: 'Sumar' },
-                                            { value: 'average', label: 'Promedio' },
-                                        ] as const).map(({ value, label }) => (
-                                            <button
-                                                key={value}
-                                                onClick={() => setConfig({ ...config, aggregation: value })}
-                                                className={`p-2.5 rounded-lg border-2 text-sm font-medium transition-all ${config.aggregation === value
-                                                    ? 'border-primary-600 bg-primary-50 text-primary-700'
-                                                    : 'border-gray-200 text-gray-500 hover:border-gray-300'
-                                                    }`}
-                                            >
-                                                {label}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
+
+                                {config.chartType === 'contribution' ? (
+                                    <>
+                                        {/* Contribution-specific fields */}
+                                        <div>
+                                            <label className="label">Propiedad de Fecha</label>
+                                            <div className="relative">
+                                                <select
+                                                    value={config.xProperty}
+                                                    onChange={(e) => setConfig({ ...config, xProperty: e.target.value })}
+                                                    disabled={properties.length === 0}
+                                                    className="input appearance-none pr-10"
+                                                >
+                                                    <option value="">{properties.length === 0 ? 'Carga las propiedades primero' : 'Selecciona...'}</option>
+                                                    {properties.filter(p => p.isDate).map((prop) => (
+                                                        <option key={prop.name} value={prop.name}>
+                                                            {prop.name} ({getPropertyTypeLabel(prop.type)})
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <label className="label">Propiedad de Asunto</label>
+                                            <div className="relative">
+                                                <select
+                                                    value={contribSubjectProp}
+                                                    onChange={(e) => setContribSubjectProp(e.target.value)}
+                                                    disabled={properties.length === 0}
+                                                    className="input appearance-none pr-10"
+                                                >
+                                                    <option value="">{properties.length === 0 ? 'Carga las propiedades primero' : 'Selecciona...'}</option>
+                                                    {properties.filter(p => p.isText || p.type === 'title').map((prop) => (
+                                                        <option key={prop.name} value={prop.name}>
+                                                            {prop.name} ({getPropertyTypeLabel(prop.type)})
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <label className="label">Propiedad de Descripción</label>
+                                            <div className="relative">
+                                                <select
+                                                    value={contribDescProp}
+                                                    onChange={(e) => setContribDescProp(e.target.value)}
+                                                    disabled={properties.length === 0}
+                                                    className="input appearance-none pr-10"
+                                                >
+                                                    <option value="">{properties.length === 0 ? 'Carga las propiedades primero' : 'Selecciona...'}</option>
+                                                    {properties.filter(p => p.isText || p.type === 'title').map((prop) => (
+                                                        <option key={prop.name} value={prop.name}>
+                                                            {prop.name} ({getPropertyTypeLabel(prop.type)})
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
+                                            </div>
+                                        </div>
+                                    </>
+                                ) : (
+                                    <>
+                                        {/* X Property */}
+                                        <div>
+                                            <label className="label">Eje X (Categorías)</label>
+                                            <div className="relative">
+                                                <select
+                                                    value={config.xProperty}
+                                                    onChange={(e) => setConfig({ ...config, xProperty: e.target.value })}
+                                                    disabled={properties.length === 0}
+                                                    className="input appearance-none pr-10"
+                                                >
+                                                    <option value="">{properties.length === 0 ? 'Carga las propiedades primero' : 'Selecciona...'}</option>
+                                                    {properties.map((prop) => (
+                                                        <option key={prop.name} value={prop.name}>
+                                                            {prop.name} ({getPropertyTypeLabel(prop.type)})
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
+                                            </div>
+                                        </div>
+
+                                        {/* Y Property */}
+                                        <div>
+                                            <label className="label">Eje Y (Valores) <span className="text-gray-400 font-normal">- Opcional</span></label>
+                                            <div className="relative">
+                                                <select
+                                                    value={config.yProperty}
+                                                    onChange={(e) => setConfig({ ...config, yProperty: e.target.value })}
+                                                    disabled={properties.length === 0}
+                                                    className="input appearance-none pr-10"
+                                                >
+                                                    <option value="">Usar conteo</option>
+                                                    {properties.filter(p => p.isNumeric).map((prop) => (
+                                                        <option key={prop.name} value={prop.name}>
+                                                            {prop.name} ({getPropertyTypeLabel(prop.type)})
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
+                                            </div>
+                                        </div>
+
+                                        {/* Aggregation */}
+                                        <div>
+                                            <label className="label">Agregación</label>
+                                            <div className="grid grid-cols-3 gap-2">
+                                                {([
+                                                    { value: 'count', label: 'Contar' },
+                                                    { value: 'sum', label: 'Sumar' },
+                                                    { value: 'average', label: 'Promedio' },
+                                                ] as const).map(({ value, label }) => (
+                                                    <button
+                                                        key={value}
+                                                        onClick={() => setConfig({ ...config, aggregation: value })}
+                                                        className={`p-2.5 rounded-lg border-2 text-sm font-medium transition-all ${config.aggregation === value
+                                                            ? 'border-primary-600 bg-primary-50 text-primary-700'
+                                                            : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                                                            }`}
+                                                    >
+                                                        {label}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </>
+                                )}
 
                                 {/* Chart Title */}
                                 <div>
@@ -968,7 +1084,7 @@ function CreatePageContent() {
                         {/* Generate Button */}
                         <button
                             onClick={handlePreview}
-                            disabled={isLoading || !config.databaseId || !config.xProperty}
+                            disabled={isLoading || !config.databaseId || !config.xProperty || (config.chartType === 'contribution' && (!contribSubjectProp || !contribDescProp))}
                             className="btn-primary w-full flex items-center justify-center gap-2 py-4"
                         >
                             {isLoading ? (
@@ -990,10 +1106,14 @@ function CreatePageContent() {
                         <div className="card p-6">
                             <h2 className="text-lg font-semibold text-gray-900 mb-6">Vista Previa</h2>
 
-                            {previewData ? (
+                            {(previewData || contributionPreviewData) ? (
                                 <div className="space-y-6">
                                     <div className="bg-gray-50 rounded-xl p-4">
-                                        <BaseChart option={getChartOptions()} height={advanced.chartHeight} />
+                                        {config.chartType === 'contribution' && contributionPreviewData ? (
+                                            <ContributionGraph entries={contributionPreviewData} title={config.title} />
+                                        ) : (
+                                            <BaseChart option={getChartOptions()} height={advanced.chartHeight} />
+                                        )}
                                     </div>
 
                                     {embedUrl && (
