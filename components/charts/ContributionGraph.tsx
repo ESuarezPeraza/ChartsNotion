@@ -60,38 +60,54 @@ export default function ContributionGraph({ entries, title, darkMode = false }: 
         return map
     }, [entries])
 
-    // Generate grid: last 52 weeks + current partial week
-    const { weeks, monthLabels } = useMemo(() => {
-        const today = new Date()
-        today.setHours(0, 0, 0, 0)
+    // Today's date string for highlighting
+    const todayStr = useMemo(() => {
+        const now = new Date()
+        return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+    }, [])
 
-        // Start from the Sunday of 52 weeks ago
-        const start = new Date(today)
-        start.setDate(today.getDate() - today.getDay() - 52 * 7)
+    // Generate grid: January 1 to December 31 of the current year
+    const { weeks, monthLabels, year } = useMemo(() => {
+        const currentYear = new Date().getFullYear()
 
-        const weeks: Array<Array<{ date: Date; dateStr: string; count: number }>> = []
+        // Start: January 1st of this year
+        const jan1 = new Date(currentYear, 0, 1)
+        // End: December 31st of this year
+        const dec31 = new Date(currentYear, 11, 31)
+
+        // The grid starts on the Sunday of the week containing Jan 1
+        const start = new Date(jan1)
+        start.setDate(jan1.getDate() - jan1.getDay())
+
+        // The grid ends on the Saturday of the week containing Dec 31
+        const end = new Date(dec31)
+        end.setDate(dec31.getDate() + (6 - dec31.getDay()))
+
+        const weeks: Array<Array<{ date: Date; dateStr: string; count: number; inYear: boolean }>> = []
         const monthLabels: Array<{ label: string; col: number }> = []
 
         let currentDate = new Date(start)
         let lastMonth = -1
 
-        while (currentDate <= today) {
+        while (currentDate <= end) {
             const weekIndex = weeks.length === 0 || weeks[weeks.length - 1].length === 7
                 ? (weeks.push([]), weeks.length - 1)
                 : weeks.length - 1
 
-            const dateStr = currentDate.toISOString().split('T')[0]
+            const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(currentDate.getDate()).padStart(2, '0')}`
             const entriesForDate = dateMap.get(dateStr) || []
+            const inYear = currentDate.getFullYear() === currentYear
 
             weeks[weekIndex].push({
                 date: new Date(currentDate),
                 dateStr,
-                count: entriesForDate.length,
+                count: inYear ? entriesForDate.length : 0,
+                inYear,
             })
 
-            // Track month labels
+            // Track month labels (only for the current year)
             const month = currentDate.getMonth()
-            if (month !== lastMonth) {
+            if (month !== lastMonth && inYear) {
                 monthLabels.push({
                     label: MONTHS_LABELS[month],
                     col: weekIndex,
@@ -102,7 +118,7 @@ export default function ContributionGraph({ entries, title, darkMode = false }: 
             currentDate.setDate(currentDate.getDate() + 1)
         }
 
-        return { weeks, monthLabels }
+        return { weeks, monthLabels, year: currentYear }
     }, [dateMap])
 
     const svgWidth = LABEL_WIDTH + weeks.length * TOTAL_CELL + 10
@@ -126,7 +142,7 @@ export default function ContributionGraph({ entries, title, darkMode = false }: 
         })
     }
 
-    const totalContributions = entries.length
+    const totalContributions = entries.filter(e => e.date.startsWith(String(year))).length
 
     return (
         <div className="relative w-full" style={{ fontFamily: 'Inter, -apple-system, sans-serif' }}>
@@ -153,7 +169,7 @@ export default function ContributionGraph({ entries, title, darkMode = false }: 
                     marginBottom: 12,
                 }}
             >
-                {totalContributions} contribuciones en el último año
+                {totalContributions} contribuciones en {year}
             </p>
 
             {/* SVG Graph */}
@@ -195,34 +211,53 @@ export default function ContributionGraph({ entries, title, darkMode = false }: 
 
                     {/* Cells */}
                     {weeks.map((week, wi) =>
-                        week.map((day, di) => (
-                            <rect
-                                key={`${wi}-${di}`}
-                                x={LABEL_WIDTH + wi * TOTAL_CELL}
-                                y={TOP_PADDING + di * TOTAL_CELL}
-                                width={CELL_SIZE}
-                                height={CELL_SIZE}
-                                rx={2}
-                                ry={2}
-                                fill={getColor(day.count)}
-                                style={{ cursor: day.count > 0 ? 'pointer' : 'default', transition: 'fill 0.1s' }}
-                                onMouseEnter={(e) => {
-                                    if (day.count > 0) {
-                                        const entriesForDay = dateMap.get(day.dateStr) || []
-                                        const entry = entriesForDay[0]
-                                        const rect = (e.target as SVGRectElement).getBoundingClientRect()
-                                        setTooltip({
-                                            x: rect.left + rect.width / 2,
-                                            y: rect.top,
-                                            date: day.dateStr,
-                                            subject: entry?.subject || '',
-                                            description: entry?.description || '',
-                                        })
-                                    }
-                                }}
-                                onMouseLeave={() => setTooltip(null)}
-                            />
-                        ))
+                        week.map((day, di) => {
+                            const isToday = day.dateStr === todayStr
+                            const cx = LABEL_WIDTH + wi * TOTAL_CELL
+                            const cy = TOP_PADDING + di * TOTAL_CELL
+                            return (
+                                <g key={`${wi}-${di}`}>
+                                    <rect
+                                        x={cx}
+                                        y={cy}
+                                        width={CELL_SIZE}
+                                        height={CELL_SIZE}
+                                        rx={2}
+                                        ry={2}
+                                        fill={day.inYear ? getColor(day.count) : 'transparent'}
+                                        style={{ cursor: day.count > 0 ? 'pointer' : 'default', transition: 'fill 0.1s' }}
+                                        onMouseEnter={(e) => {
+                                            if (day.count > 0) {
+                                                const entriesForDay = dateMap.get(day.dateStr) || []
+                                                const entry = entriesForDay[0]
+                                                const rect = (e.target as SVGRectElement).getBoundingClientRect()
+                                                setTooltip({
+                                                    x: rect.left + rect.width / 2,
+                                                    y: rect.top,
+                                                    date: day.dateStr,
+                                                    subject: entry?.subject || '',
+                                                    description: entry?.description || '',
+                                                })
+                                            }
+                                        }}
+                                        onMouseLeave={() => setTooltip(null)}
+                                    />
+                                    {isToday && (
+                                        <rect
+                                            x={cx - 1}
+                                            y={cy - 1}
+                                            width={CELL_SIZE + 2}
+                                            height={CELL_SIZE + 2}
+                                            rx={3}
+                                            ry={3}
+                                            fill="none"
+                                            stroke={darkMode ? '#ffffff' : '#1f2937'}
+                                            strokeWidth={2}
+                                        />
+                                    )}
+                                </g>
+                            )
+                        })
                     )}
                 </svg>
             </div>
